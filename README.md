@@ -1,4 +1,4 @@
-# desmoid_RNAseq
+# Desmoid_RNAseq
 Analysis of bulk RNAseq data of desmoid tumor and reactive fibrotic tissue
 
 ## 37 Desmoid tissues and 25 reactive fibrotic tissue
