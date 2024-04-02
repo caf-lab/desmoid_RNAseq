@@ -1,3 +1,7 @@
+# Author : Seok-Hyung Kim M.D
+Professor at Samsung medical center, department of pathology
+college of medicine, Sungkyunkwan University
+
 # Desmoid_RNAseq
 Analysis of bulk RNAseq data of desmoid tumor and reactive fibrotic tissue
 
