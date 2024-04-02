@@ -2,18 +2,18 @@
 library(dplyr)
 library(ggplot2)
 library(readxl)
+library(ggrepel)
+library(pheatmap)
+library(DESeq2)
 
 # -----------------------------------------------------------------------------#
 #***********  Load batch corrected data and modified metadata  ****************#
 # -----------------------------------------------------------------------------#
-load("output/02._02.batch_corrected_ds_modified_metadata.Rda")
 
-library(ggrepel)
-library(pheatmap)
-library(DESeq2)
+load("Folder_for_GitHub/01.batch_corrected_RNAseq_raw_data_and_metadata.Rda")
 dds <- DESeqDataSetFromMatrix(countData = ds,
                               colData = metadata,
-                              design = ~ Dx1)
+                              design = ~ Dx)
 dds <- estimateSizeFactors(dds)
 sizeFactors(dds)
 normalized_CAF_counts <- counts(dds, normalized=TRUE)
@@ -21,60 +21,25 @@ vsd_CAF <- vst(dds, blind = TRUE)
 vsd_mat_CAF <- assay(vsd_CAF)
 vsd_cor_CAF <- cor(vsd_mat_CAF)
 
-pheatmap(vsd_cor_CAF, annotation = select(metadata, Dx5))
-
-plotPCA(vsd_CAF, intgroup=c("Dx5"))
-plotPCA(vsd_CAF, intgroup=c("Seq"))
-plotPCA(vsd_CAF, intgroup=c("Dx6"))
-
-pcaData <- plotPCA(vsd_CAF, intgroup=c("Dx5", "Dx6"), returnData=TRUE)
-rownames(pcaData)
-percentVar <- round(100 * attr(pcaData, "percentVar"))
-
-ggplot(pcaData, aes(PC1, PC2, color=Dx5, label=name)) +
-  geom_point(size=2) +
-  geom_text_repel(max.overlaps = Inf) +
-  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
-  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
-  coord_fixed()
-
-
-
 # -----------------------------------------------------------------------------#
 #****************************       DDX       *********************************#
 # -----------------------------------------------------------------------------#
-metadata$Dx7 = metadata$Dx5
-which(rownames(metadata)=="S20-18553_2B_Read_Count")
-which(rownames(metadata)=="S22-46648_1_Read_Count")
-metadata[which(rownames(metadata)=="S20-18553_2B_Read_Count"), 'Dx7'] <- 'Scar'
-metadata[which(rownames(metadata)=="S22-46648_1_Read_Count"), 'Dx7'] <- 'Scar'
-write.csv(metadata, "result/2024-02/metadata_final.csv")
-
 install.packages("devtools")
 library(devtools)
 install_github("stephens999/ashr")
-
-all(rownames(metadata) == colnames(ds))  # To confirm the order of sample
-# If this function produce "False", perform next code.
-# idx <- match(colnames(ds.01), rownames(metadata))
-# reordered_metadata <- metadata[idx, ]
-
-dds <- DESeqDataSetFromMatrix(countData = ds,
-                              colData = metadata,
-                              design = ~ Dx7)
 
 dds <- DESeq(dds)
 plotDispEsts(dds)
 
 results(dds, alpha = 0.05)
 dds_res <- results(dds,
-                   contrast = c("Dx7", "Des", "Scar"),
+                   contrast = c("Dx", "Des", "Scar"),
                    alpha = 0.05)
 plotMA(dds_res, ylim=c(-8, 8))
-resultsNames(dds)     # [1] "Intercept"    "Group_B_vs_A"
+resultsNames(dds)     # [[1] "Intercept"      "Dx_Scar_vs_Des"
 # ref :https://rdrr.io/bioc/DESeq2/man/lfcShrink.html
 dds_res <- lfcShrink(dds,
-                     coef = "Dx7_Scar_vs_Des",
+                     coef = "Dx_Scar_vs_Des",
                      type = 'ashr',
                      res = dds_res)
 plotMA(dds_res, ylim=c(-8, 8))
@@ -85,7 +50,7 @@ resultsNames(dds_res)
 head(dds_res, n=10)
 summary(dds_res)
 
-# out of 18746 with nonzero total read count
+# out of 34544 with nonzero total read count
 # adjusted p-value < 0.05
 # LFC > 0 (up)       : 6657, 19%
 # LFC < 0 (down)     : 678, 2% 
@@ -98,15 +63,15 @@ summary(dds_res)
 
 #--------------- Significant DE genes - fold change / threshold --------------#
 dds_res <- results(dds,
-                   contrast = c("Dx7", "Des", "Scar"),  # if Des>Scar, positive value 
+                   contrast = c("Dx", "Des", "Scar"),  # if Des>Scar, positive value 
                    alpha = 0.05,
                    lfcThreshold = 0.32)  # log-sale 
 dds_res <- lfcShrink(dds,
-                     contrast = c("Dx7", "Dex", "Scar"),
+                     contrast = c("Dx", "Dex", "Scar"),
                      type = 'ashr',
                      res = dds_res)
 summary(dds_res)
-# out of 41122 with nonzero total read count
+# out of 34544 with nonzero total read count
 # adjusted p-value < 0.05
 # LFC > 0 (up)       : 4021, 12%
 # LFC < 0 (down)     : 246, 0.71%
@@ -134,102 +99,45 @@ dds_res_all <- dds_res_all %>% filter(!duplicated(symbol))
 write.csv(dds_res_all, "result/2024-02/02.DDx-Desmoid_vs_Scar.csv", row.names = FALSE)
 
 dds_res_sig <- subset(dds_res, padj < 0.05)
-
-
+dds_res_sig <- data.frame(dds_res_sig) %>% arrange(desc(log2FoldChange)) %>%
+  tibble::rownames_to_column(var="gene")
 
 #################################################################################
 #---------- Visualizing results - PCA plot -----------------------#
-plotPCA(vsd_CAF, intgroup=c("Dx7"))
-plotPCA(vsd_CAF, intgroup=c("Seq"))
+plotPCA(vsd_CAF, intgroup=c("Dx"))
 
-pcaData <- plotPCA(vsd_CAF, intgroup=c("Dx7"), returnData=TRUE)
+pcaData <- plotPCA(vsd_CAF, intgroup=c("Dx"), returnData=TRUE)
 rownames(pcaData)
 percentVar <- round(100 * attr(pcaData, "percentVar"))
 
-ggplot(pcaData, aes(PC1, PC2, color=Dx7, label=name)) +
+ggplot(pcaData, aes(PC1, PC2, color=Dx, label=name)) +
   geom_point(size=2) +
   geom_text_repel(max.overlaps = Inf) +
   xlab(paste0("PC1: ",percentVar[1],"% variance")) +
   ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
   coord_fixed()+ 
   theme_bw()
-ggsave("result/2024-02/01.PCA_plot_1.pdf", width = 15, height = 15)
-
-ggplot(pcaData, aes(PC1, PC2, color=Dx7, label=name)) +
-  geom_point(size=2) +
-  geom_text_repel(max.overlaps = Inf) +
-  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
-  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
-  coord_fixed()+ 
-  theme_bw()+ 
-  theme(panel.border = element_blank(), panel.grid.major = element_blank(),
-                    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))
-ggsave("result/2024-02/01.PCA_plot_2.pdf", width = 15, height = 15)
-
-ggplot(pcaData, aes(PC1, PC2, color=Dx7)) +
-  geom_point(size=5) +
-  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
-  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
-  coord_fixed()+ 
-  theme_bw()
-ggsave("result/2024-02/01.PCA_plot_3.pdf", width = 15, height = 15)
-
-ggplot(pcaData, aes(PC1, PC2, color=Dx7)) +
-  geom_point(size=5) +
-  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
-  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
-  theme_bw()
-ggsave("result/2024-02/01.PCA_plot_4.pdf", width = 17, height = 15)
 
 #---------- Visualizing results - expression heatmap -------------#
-dds <- estimateSizeFactors(dds)
-sizeFactors(dds)
-# Normalizaed counts: extraction
-normalized_CAF_counts <- counts(dds, normalized=TRUE)
-sig_norm_CAF_counts <- normalized_CAF_counts[row.names(dds_res_sig),]
+dds_res_sig <- dds_res_sig %>% tibble::column_to_rownames(var="gene")
 
 library(RColorBrewer)
 heat_colors <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
 heat_colors <- rev(heat_colors)
-# heat_colors <- brewer.pal(9, "YlOrRd")
-display.brewer.all()
-
 library(pheatmap)
-pdf("result/2024-02/03.DEG.heatmap-1.pdf", width = 7, height = 7)
-pheatmap(sig_norm_CAF_counts,
-         color = heat_colors,
-         cluster_rows =T,
-         show_rownames = F,
-         annotation = select(metadata, Dx7),
-         scale = "row")
-dev.off()
-
-sig_norm_CAF_counts <- normalized_CAF_counts[ rownames(dds_res_sig[dds_res_sig$padj < 0.00001,]),]
-pdf("result/2024-02/03.DEG.heatmap-2.pdf", width = 7, height = 7)
-pheatmap(sig_norm_CAF_counts,
-         color = heat_colors,
-         cluster_rows =T,
-         show_rownames = F,
-         annotation = select(metadata, Dx7),
-         scale = "row")
-dev.off()
-
 
 sig_norm_CAF_counts <- normalized_CAF_counts[ rownames(dds_res_sig[dds_res_sig$padj < 0.00001
                                                                    & dds_res_sig$baseMean >500,]),]
-pdf("result/2024-02/03.DEG.heatmap-3.pdf", width = 7, height = 7)
 pheatmap(sig_norm_CAF_counts,
          color = heat_colors,
          cluster_rows =T,
          show_rownames = T,
-         annotation = select(metadata, Dx7),
+         annotation = select(metadata, Dx),
          scale = "row")
-dev.off()
-write.csv(sig_norm_CAF_counts, "result/2024-02/03.DEG.heatmap-3_data.csv")
 
-
+# Volcano plot ----------------------------------------------------------------
 dds_res_all <- dds_res_all %>% mutate(threshold = padj < 0.05)
-# Volcano plot
+
 ggplot(dds_res_all %>% filter(baseMean >500)) +
   geom_point(aes(x=log2FoldChange, y=-log10(padj), color = threshold)) +
   xlab("log2 fold change") +
@@ -238,71 +146,19 @@ ggplot(dds_res_all %>% filter(baseMean >500)) +
         plot.title = element_text(size = rel(1.5), hjust = 0.5),
         axis.title = element_text(size = rel(1.25)))+
   theme_bw()
-ggsave("result/2024-02/04.DEG.Volcano-plot-2.pdf")
-write.csv(dds_res_all %>% filter(baseMean >500), "result/2024-02/04.DEG.Volcano-plot-1_data.csv")
 
 volcano.ds <- dds_res_all %>% filter(baseMean >500)
-volcano.ds <- read.csv("result/2024-02/04.DEG.Volcano-plot-1_data.csv", header = T)
 ggplot(dds_res_all %>% filter(baseMean >500)) +
   geom_point(aes(x=log2FoldChange, y=-log10(padj), color = threshold)) +
   geom_text_repel(data = volcano.ds %>% 
                     filter(log2FoldChange >5 | -log10(padj) > 8.5 | log2FoldChange < -5), 
-                  aes(label = Genes, x = log2FoldChange, y = -log10(padj)), box.padding = unit(.7, "lines"),hjust= 0.30) +
+                  aes(label = symbol, x = log2FoldChange, y = -log10(padj)), box.padding = unit(.7, "lines"),hjust= 0.30) +
   xlab("log2 fold change") +
   ylab("-log10 adjusted p-value") +
   theme(legend.position = "none",
         plot.title = element_text(size = rel(1.5), hjust = 0.5),
         axis.title = element_text(size = rel(1.25)))+
   theme_bw()
-ggsave("result/2024-02/04.DEG.Volcano-plot-4.pdf")
-
-
-
-
-
-
-
-
-ggplot(dds_res_all) +
-  geom_point(aes(x=log2FoldChange, y=-log10(padj), color = threshold)) +
-  xlab("log2 fold change") +
-  ylab("-log10 adjusted p-value") +
-  theme(legend.position = "none",
-        plot.title = element_text(size = rel(1.5), hjust = 0.5),
-        axis.title = element_text(size = rel(1.25)))
-
-
-dds_res_all %>% filter(log2FoldChange > 20)
-boxplot(dds_res_all$baseMean)
-barplot(dds_res_all$baseMean)
-median(dds_res_all$baseMean)
-ds[rownames(ds)=='PHOX2A', ]
-
-dds_res_all %>% filter(padj < 1.00e-50)
-ds[rownames(ds)=='CACNG1', ]
-ds[rownames(ds)=='HMGN2P18', ]
-ds[rownames(ds)=='LINC00269', ]
-
-dds_res_all %>% filter(padj < 1.00e-40)
-
-ggplot(dds_res_all %>% filter(log2FoldChange <15 & log2FoldChange > -15)) +
-  geom_point(aes(x=log2FoldChange, y=-log10(padj), color = threshold)) +
-  xlab("log2 fold change") +
-  ylab("-log10 adjusted p-value") +
-  theme(legend.position = "none",
-        plot.title = element_text(size = rel(1.5), hjust = 0.5),
-        axis.title = element_text(size = rel(1.25)))
-
-
-ggplot(dds_res_all %>% filter(baseMean >50)) +
-  geom_point(aes(x=log2FoldChange, y=-log10(padj), color = threshold)) +
-  xlab("log2 fold change") +
-  ylab("-log10 adjusted p-value") +
-  theme(legend.position = "none",
-        plot.title = element_text(size = rel(1.5), hjust = 0.5),
-        axis.title = element_text(size = rel(1.25)))
-
-
 
 
 #####################################################
@@ -449,4 +305,5 @@ if (1 %in% execute_steps){
   
   ggsave("result/2024-02/05.pathway_enriche_in_scar-1.pdf")
 }
+
 
