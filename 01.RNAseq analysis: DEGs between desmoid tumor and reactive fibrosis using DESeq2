@@ -1,1 +1,307 @@
+# Analysis of initial + latter RNA sequencing data from macrogen. 
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(ggrepel)
+library(pheatmap)
+library(DESeq2)
 
+# -----------------------------------------------------------------------------#
+#***********  Load batch corrected data and modified metadata  ****************#
+# -----------------------------------------------------------------------------#
+
+load("Folder_for_GitHub/01.batch_corrected_RNAseq_raw_data_and_metadata.Rda")
+dds <- DESeqDataSetFromMatrix(countData = ds,
+                              colData = metadata,
+                              design = ~ Dx)
+dds <- estimateSizeFactors(dds)
+sizeFactors(dds)
+normalized_CAF_counts <- counts(dds, normalized=TRUE)
+vsd_CAF <- vst(dds, blind = TRUE)   
+vsd_mat_CAF <- assay(vsd_CAF)
+vsd_cor_CAF <- cor(vsd_mat_CAF)
+
+# -----------------------------------------------------------------------------#
+#****************************       DDX       *********************************#
+# -----------------------------------------------------------------------------#
+install.packages("devtools")
+library(devtools)
+install_github("stephens999/ashr")
+
+dds <- DESeq(dds)
+plotDispEsts(dds)
+
+results(dds, alpha = 0.05)
+dds_res <- results(dds,
+                   contrast = c("Dx", "Des", "Scar"),
+                   alpha = 0.05)
+plotMA(dds_res, ylim=c(-8, 8))
+resultsNames(dds)     # [[1] "Intercept"      "Dx_Scar_vs_Des"
+# ref :https://rdrr.io/bioc/DESeq2/man/lfcShrink.html
+dds_res <- lfcShrink(dds,
+                     coef = "Dx_Scar_vs_Des",
+                     type = 'ashr',
+                     res = dds_res)
+plotMA(dds_res, ylim=c(-8, 8))
+
+mcols(dds_res)
+
+resultsNames(dds_res)
+head(dds_res, n=10)
+summary(dds_res)
+
+# out of 34544 with nonzero total read count
+# adjusted p-value < 0.05
+# LFC > 0 (up)       : 6657, 19%
+# LFC < 0 (down)     : 678, 2% 
+# outliers [1]       : 0, 0%
+# low counts [2]     : 4072, 12%
+# (mean count < 1)
+# [1] see 'cooksCutoff' argument of ?results
+# [2] see 'independentFiltering' argument of ?results
+
+
+#--------------- Significant DE genes - fold change / threshold --------------#
+dds_res <- results(dds,
+                   contrast = c("Dx", "Des", "Scar"),  # if Des>Scar, positive value 
+                   alpha = 0.05,
+                   lfcThreshold = 0.32)  # log-sale 
+dds_res <- lfcShrink(dds,
+                     contrast = c("Dx", "Dex", "Scar"),
+                     type = 'ashr',
+                     res = dds_res)
+summary(dds_res)
+# out of 34544 with nonzero total read count
+# adjusted p-value < 0.05
+# LFC > 0 (up)       : 4021, 12%
+# LFC < 0 (down)     : 246, 0.71%
+# outliers [1]       : 0, 0.0%
+# low counts [2]     : 5410, 16%
+# (mean count < 1)
+# [1] see 'cooksCutoff' argument of ?results
+# [2] see 'independentFiltering' argument of ?results
+
+rownames(ds)[1:5]
+# Ref https://www.rdocumentation.org/packages/annotables/versions/0.1.1
+# Ref https://chubeam.blogspot.com/2019/05/r-lazy-load-database.html
+install.packages("devtools")
+devtools::install_github("stephenturner/annotables")
+library(annotables)
+grch38
+dds_res_all <- data.frame(dds_res) %>% 
+  tibble::rownames_to_column(var="symbol")
+
+dds_res_all <- data.frame(dds_res_all) %>%
+  left_join(x = dds_res_all,
+            y = grch38[ , c("ensgene", "entrez", "symbol", "description")],
+            by = "symbol")
+dds_res_all <- dds_res_all %>% filter(!duplicated(symbol))
+write.csv(dds_res_all, "result/2024-02/02.DDx-Desmoid_vs_Scar.csv", row.names = FALSE)
+
+dds_res_sig <- subset(dds_res, padj < 0.05)
+dds_res_sig <- data.frame(dds_res_sig) %>% arrange(desc(log2FoldChange)) %>%
+  tibble::rownames_to_column(var="gene")
+
+#################################################################################
+#---------- Visualizing results - PCA plot -----------------------#
+plotPCA(vsd_CAF, intgroup=c("Dx"))
+
+pcaData <- plotPCA(vsd_CAF, intgroup=c("Dx"), returnData=TRUE)
+rownames(pcaData)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+ggplot(pcaData, aes(PC1, PC2, color=Dx, label=name)) +
+  geom_point(size=2) +
+  geom_text_repel(max.overlaps = Inf) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed()+ 
+  theme_bw()
+
+#---------- Visualizing results - expression heatmap -------------#
+dds_res_sig <- dds_res_sig %>% tibble::column_to_rownames(var="gene")
+
+library(RColorBrewer)
+heat_colors <- colorRampPalette(brewer.pal(11, "RdBu"))(100)
+heat_colors <- rev(heat_colors)
+library(pheatmap)
+
+sig_norm_CAF_counts <- normalized_CAF_counts[ rownames(dds_res_sig[dds_res_sig$padj < 0.00001
+                                                                   & dds_res_sig$baseMean >500,]),]
+pheatmap(sig_norm_CAF_counts,
+         color = heat_colors,
+         cluster_rows =T,
+         show_rownames = T,
+         annotation = select(metadata, Dx),
+         scale = "row")
+
+# Volcano plot ----------------------------------------------------------------
+dds_res_all <- dds_res_all %>% mutate(threshold = padj < 0.05)
+
+ggplot(dds_res_all %>% filter(baseMean >500)) +
+  geom_point(aes(x=log2FoldChange, y=-log10(padj), color = threshold)) +
+  xlab("log2 fold change") +
+  ylab("-log10 adjusted p-value") +
+  theme(legend.position = "none",
+        plot.title = element_text(size = rel(1.5), hjust = 0.5),
+        axis.title = element_text(size = rel(1.25)))+
+  theme_bw()
+
+volcano.ds <- dds_res_all %>% filter(baseMean >500)
+ggplot(dds_res_all %>% filter(baseMean >500)) +
+  geom_point(aes(x=log2FoldChange, y=-log10(padj), color = threshold)) +
+  geom_text_repel(data = volcano.ds %>% 
+                    filter(log2FoldChange >5 | -log10(padj) > 8.5 | log2FoldChange < -5), 
+                  aes(label = symbol, x = log2FoldChange, y = -log10(padj)), box.padding = unit(.7, "lines"),hjust= 0.30) +
+  xlab("log2 fold change") +
+  ylab("-log10 adjusted p-value") +
+  theme(legend.position = "none",
+        plot.title = element_text(size = rel(1.5), hjust = 0.5),
+        axis.title = element_text(size = rel(1.25)))+
+  theme_bw()
+
+
+#####################################################
+#        Enrich R  enriched in desmoid       #
+#####################################################
+dds_res_all %>% filter(log2FoldChange > 0.25 & padj <0.05 & baseMean > 200) -> DEG_pos
+execute_steps = c(1)
+if (1 %in% execute_steps){
+  #install.packages("enrichR")
+  library(enrichR)
+  dbs <- listEnrichrDbs()
+  
+  Des_enriched <- enrichr(DEG_pos$symbol, dbs$libraryName)
+  test <- Des_enriched$GO_Biological_Process_2015 %>% filter( P.value < 0.05 ) %>% arrange( P.value )
+  test <- Des_enriched$GO_Biological_Process_2023 %>% filter( P.value < 0.05 ) %>% arrange( P.value )
+  test <- Des_enriched$GO_Molecular_Function_2015 %>% filter( P.value < 0.05 ) %>% arrange( P.value )
+  
+  
+  Des_enriched_df <- bind_rows(Des_enriched)[, c(1:7)]
+  Des_enriched_filter_df <- dplyr::filter(Des_enriched_df, P.value < 0.05)
+  write_csv(ME16_enriched_filter_df, "result/2024.02/05.ME16_enriched_filter_df.csv")
+  
+  test = Des_enriched_df[grep( pattern = "HALLMAR", x = Des_enriched_df$Term ),]
+  test = Des_enriched_filter_df[grep( pattern = "COPD", x = Des_enriched_filter_df$Term ),]
+  test = Des_enriched_filter_df[grep( pattern = "FIBROBLAST", x = Des_enriched_filter_df$Term ),]
+  test = Des_enriched_filter_df[grep( pattern = "Fibroblast", x = Des_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Des_enriched_filter_df[grep( pattern = "Idiopathic", x = Des_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Des_enriched_filter_df[grep( pattern = "fibrosis", x = Des_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Des_enriched_filter_df[grep( pattern = "olfactory", x = Des_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Des_enriched_filter_df[grep( pattern = "perception", x = Des_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Des_enriched_filter_df[grep( pattern = "stimulus", x = Des_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Des_enriched_filter_df[grep( pattern = "Wnt", x = Des_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Des_enriched_filter_df[grep( pattern = "Beta-Catenin", x = Des_enriched_filter_df$Term ),] %>% arrange( P.value )
+  selected_pathways <- c( "striated muscle contraction (GO:0006941)",
+                          "muscle contraction (GO:0006936)",
+                          "actin-mediated cell contraction (GO:0070252)",
+                          "actin-myosin filament sliding (GO:0033275)",
+                          "muscle tissue morphogenesis (GO:0060415)",
+                          "embryonic limb morphogenesis (GO:0030326)",
+                          "synaptic transmission (GO:0007268)",
+                          "Chemical Synaptic Transmission (GO:0007268)",
+                          "Wnt signaling pathway Homo sapiens P00057",
+                          "regulation of Wnt signaling pathway (GO:0030111)",
+                          "Dorsal Dermal Fibroblasts Beta-Catenin GSE75944 1",
+                          "Wnt signaling pathway",
+                          "sensory perception (GO:0007600)",
+                          "sensory perception of mechanical stimulus (GO:0050954)")
+  tmp <- Des_enriched_filter_df %>% dplyr::filter(Term %in% selected_pathways) %>% arrange(P.value)
+  tmp <- tmp[c(1,4,5,9,12, 15,16,20,28),]
+  
+  # install.packages("ggbreak")
+  library("ggbreak")
+  tmp$Term <- as.factor(tmp$Term)
+  levels(tmp$Term)= c("sensory perception of mechanical stimulus (GO:0050954)",
+                      "Chemical Synaptic Transmission (GO:0007268)",
+                      "Wnt signaling pathway Homo sapiens P00057",
+                      "Dorsal Dermal Fibroblasts Beta-Catenin GSE75944 1",
+                      "embryonic limb morphogenesis (GO:0030326)",
+                      "actin-myosin filament sliding (GO:0033275)",
+                      "actin-mediated cell contraction (GO:0070252)",
+                      "striated muscle contraction (GO:0006941)" )
+  
+  ggplot( tmp, aes(x=Term, y=-log10(P.value), fill=Term))+geom_bar(stat="identity", position="dodge")+
+    scale_y_break(c(4.5, 6.7 ), scale = 1) +
+    scale_y_break(c(7, 10), scale = 0.5)+
+    coord_flip()+
+    theme(legend.position= "none", axis.text.x = element_text(face = "bold", color = "black"),
+          axis.text.y = element_text(hjust = 1, face = "bold", color = "black"),
+          plot.title = element_text(face = "bold", size = rel(1.2), hjust = 0.5), panel.background =element_blank(),
+          axis.title = element_text(face = "bold",size = rel(1)), axis.line = element_line(colour="black", size = .8),
+          panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          strip.background=element_rect(colour="#f0f0f0",fill="#f0f0f0"))
+  
+  ggsave("result/2024-02/05.pathway_enriche_in_desmoid-1.pdf")
+}
+
+
+#####################################################
+#        Enrich R  enriched in Scar                 #
+#####################################################
+dds_res_all %>% filter(log2FoldChange < -0.25 & padj <0.05 & baseMean > 10) -> DEG_neg
+execute_steps = c(1)
+if (1 %in% execute_steps){
+  #install.packages("enrichR")
+  library(enrichR)
+  dbs <- listEnrichrDbs()
+  
+  Scar_enriched <- enrichr(DEG_neg$symbol, dbs$libraryName)
+  test <- Scar_enriched$GO_Biological_Process_2015 %>% filter( P.value < 0.05 ) %>% arrange( P.value )
+  test <- Scar_enriched$GO_Biological_Process_2023 %>% filter( P.value < 0.05 ) %>% arrange( P.value )
+  
+  
+  
+  Scar_enriched_df <- bind_rows(Scar_enriched)[, c(1:7)]
+  Scar_enriched_filter_df <- dplyr::filter(Scar_enriched_df, P.value < 0.05)
+  write_csv(ME16_enriched_filter_df, "result/2024.02/05.ME16_enriched_filter_df.csv")
+  
+  test = Scar_enriched_df[grep( pattern = "HALLMAR", x = Scar_enriched_df$Term ),]
+  test = Scar_enriched_filter_df[grep( pattern = "COPD", x = Scar_enriched_filter_df$Term ),]
+  test = Scar_enriched_filter_df[grep( pattern = "FIBROBLAST", x = Scar_enriched_filter_df$Term ),]
+  test = Scar_enriched_filter_df[grep( pattern = "Fibroblast", x = Scar_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Scar_enriched_filter_df[grep( pattern = "Idiopathic", x = Scar_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Scar_enriched_filter_df[grep( pattern = "fibrosis", x = Scar_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Scar_enriched_filter_df[grep( pattern = "olfactory", x = Scar_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Scar_enriched_filter_df[grep( pattern = "perception", x = Scar_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = Scar_enriched_filter_df[grep( pattern = "stimulus", x = Scar_enriched_filter_df$Term ),] %>% arrange( P.value )
+  
+  
+  selected_pathways <- c( "regulation of humoral immune response (GO:0002920)",
+                          "regulation of acute inflammatory response (GO:0002673)",
+                          "regulation of complement activation (GO:0030449)",
+                          "regulation of response to wounding (GO:1903034)",
+                          "regulation of inflammatory response (GO:0050727)",
+                          "regulation of apoptotic cell clearance (GO:2000425)",
+                          "extracellular matrix organization (GO:0030198)",
+                          "Positive Regulation Of Apoptotic Cell Clearance (GO:2000427)",
+                          "Positive Regulation Of Macrophage Chemotaxis (GO:0010759)",
+                          "Positive Regulation Of Cell Death (GO:0010942)")
+  tmp <- Scar_enriched_filter_df %>% dplyr::filter(Term %in% selected_pathways) %>% arrange(P.value)
+  tmp <- tmp[c(1,3,11,12,13,14,17,19),]
+  
+  # install.packages("ggbreak")
+  library("ggbreak")
+  tmp$Term <- as.factor(tmp$Term)
+  levels(tmp$Term)= c("Positive Regulation Of Cell Death (GO:0010942)",
+                      "Positive Regulation Of Apoptotic Cell Clearance (GO:2000427)",
+                      "Positive Regulation Of Apoptotic Cell Clearance (GO:2000427)",
+                      "regulation of complement activation (GO:0030449)",
+                      "Positive Regulation Of Macrophage Chemotaxis (GO:0010759)",
+                      "regulation of humoral immune response (GO:0002920)",
+                      "regulation of inflammatory response (GO:0050727)",
+                      "regulation of response to wounding (GO:1903034)")
+  
+  ggplot( tmp, aes(x=Term, y=-log10(P.value), fill=Term))+geom_bar(stat="identity", position="dodge")+
+    scale_y_break(c(4.5, 6.7 ), scale = 1) +
+    scale_y_break(c(7, 10), scale = 0.5)+
+    coord_flip()+
+    theme(legend.position= "none", axis.text.x = element_text(face = "bold", color = "black"),
+          axis.text.y = element_text(hjust = 1, face = "bold", color = "black"),
+          plot.title = element_text(face = "bold", size = rel(1.2), hjust = 0.5), panel.background =element_blank(),
+          axis.title = element_text(face = "bold",size = rel(1)), axis.line = element_line(colour="black", size = .8),
+          panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          strip.background=element_rect(colour="#f0f0f0",fill="#f0f0f0"))
+  
+  ggsave("result/2024-02/05.pathway_enriche_in_scar-1.pdf")
+}
