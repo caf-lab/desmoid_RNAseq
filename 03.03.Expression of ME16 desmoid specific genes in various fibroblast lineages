@@ -1,0 +1,89 @@
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+
+MSF = readRDS("data/Mouse_SS_Fibro.RDS")  # mouse steady state fibroblasts
+MPF = readRDS("data/Mouse_PS_Fibro.RDS")  # mouse pertubation fibroblasts
+HPF = readRDS("data/Human_PS_Fibro.RDS")  # Human pertubation fibroblasts
+
+
+DimPlot(MSF, label = T, raster = FALSE)
+DimPlot(MPF, label = T )
+DimPlot(HPF, label = T, group.by = "ClustName" )
+
+
+#-------------------------------------------------------------------------#
+####### Expression of ME16 in Human pertubated fibroblast population ######
+#-------------------------------------------------------------------------#
+DimPlot(HPF, label = T, group.by = "ClustName" )
+
+gene_module_key = read.csv("Folder_for_GitHub/03.WGCNA_gene_module_key.csv", row.names = 1)
+gene_module_key %>% dplyr::filter(module == "ME16") %>% pull(gene) -> ME16.gene
+
+driver_ME16 = read.csv("Folder_for_GitHub/03.driver_gene_ME16.csv", row.names = 1)
+driver_ME16 %>% filter(gene.symbol %in% ME16.gene) -> driver_ME16_filtered
+
+driver_ME16 %>% filter(gene.symbol %in% ME16.gene & corr.to.trait > 0 ) %>% pull(gene.symbol) -> ME16.gene.P
+ME16P_list <- list(ME16.gene.P)
+HPF <- AddModuleScore(HPF, features = ME16P_list, name = "ME16_positive", seed = 42)
+VlnPlot(HPF, group.by = "Tissue", pt.size = 0, features = c('ME16_positive1'))
+
+driver_ME16 %>% filter(gene.symbol %in% ME16.gene & corr.to.trait < 0 ) %>% pull(gene.symbol) -> ME16.gene.N
+ME16N_list <- list(ME16.gene.N)
+HPF <- AddModuleScore(HPF, features = ME16N_list, name = "ME16_negative", seed = 42)
+VlnPlot(HPF, group.by = "Tissue", pt.size = 0, features = c('ME16_negative1'))
+
+
+
+library(RColorBrewer)
+plotCol = rev(brewer.pal(n = 7, name = "RdYlBu"))
+
+ggOut <- FeaturePlot(HPF, reduction = "umap", pt.size = 0.5, 
+                     features = "ME16_positive1") + 
+  ggtitle("Enrichement of Desmoid-ME16.genes") +
+  scale_color_gradientn(colors = plotCol, limits=c(-0.2,0.4)) + theme(aspect.ratio = 1)
+
+
+
+#-------------------------------------------------------------------------#
+####### Expression of ME16 in mouse pertubated fibroblast population ######
+#-------------------------------------------------------------------------#
+
+DimPlot(MSF, label = T, group.by = "ClustName") + ggtitle("Fibroblasts in steady-state mouse tissues")
+ggsave("results/2023_10/06.MSF-dimplot-1.pdf", height = 6, width = 7)
+
+DimPlot(MPF, label = T, group.by = "ClustName") + ggtitle("Fibroblasts in perturbed mouse tissues")
+ggsave("results/2023_10/06.MPF-dimplot-1.pdf", height = 6, width = 7)
+
+mousify <- function(a){
+  return(paste0(substr(a,1,1), tolower(substr(a,2,nchar(a)))))
+}
+
+mousify(ME16.gene.P)
+
+ME16P_list.m <- list(mousify(ME16.gene.P))
+MPF <- AddModuleScore(MPF, features = ME16P_list.m, name = "ME16_positive", seed = 42)
+VlnPlot(MPF, group.by = "Tissue", pt.size = 0, features = c('ME16_positive1'))
+MSF <- AddModuleScore(MSF, features = ME16P_list.m, name = "ME16_positive", seed = 42)
+VlnPlot(MSF, group.by = "Tissue", pt.size = 0, features = c('ME16_positive1'))
+
+ME16N_list.m <- list(mousify(ME16.gene.N))
+MPF <- AddModuleScore(MPF, features = ME16N_list.m, name = "ME16_negative", seed = 42)
+VlnPlot(MPF, group.by = "Tissue", pt.size = 0, features = c('ME16_negative1'))
+MSF <- AddModuleScore(MSF, features = ME16N_list.m, name = "ME16_negative", seed = 42)
+VlnPlot(MSF, group.by = "Tissue", pt.size = 0, features = c('ME16_negative1'))
+
+
+library(RColorBrewer)
+plotCol = rev(brewer.pal(n = 20, name = "RdYlBu"))
+ggOut <- FeaturePlot(MPF, reduction = "umap", pt.size = 0.5, 
+                     features = "ME16_positive1") + 
+  ggtitle("Enrichment of Desmoid-ME16.genes \n in fibroblasts in perturbed mouse tissue") +
+  scale_color_gradientn(colors = plotCol) + theme(aspect.ratio = 1)
+print(ggOut)
+
+ggOut <- FeaturePlot(MSF, reduction = "umap", pt.size = 0.5, 
+                     features = "ME16_positive1") + 
+  ggtitle("Enrichment of Desmoid-ME16.genes \n in fibroblasts in stady state mouse tissue") +
+  scale_color_gradientn(colors = plotCol, limits=c(-0.2,0.4)) + theme(aspect.ratio = 1)
+print(ggOut)
