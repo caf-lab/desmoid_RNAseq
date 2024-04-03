@@ -18,9 +18,9 @@ Analysis of bulk RNAseq data of desmoid tumor and reactive fibrotic tissue
 ### Additional files required to run R codes of single cell analysis
 GSE163973_integrate.all.NS.all.KL.seurat.object.Rdata \\
 GSE163973_integrate.all.NS.all.KL.fib.seurat.object.Rdata \\
-GSE163973_integrate.all.NS.all.KL.fib.main.clusters.Rdata
-GSE163973_integrate.all.NS.all.KL_cell.meta.data.csv
-GSE163973_integrate.all.NS.all.KL.fib_cell.meta.data.csv
+GSE163973_integrate.all.NS.all.KL.fib.main.clusters.Rdata \\
+GSE163973_integrate.all.NS.all.KL_cell.meta.data.csv \\
+GSE163973_integrate.all.NS.all.KL.fib_cell.meta.data.csv \\
 GSE163973_integrate.all.NS.all.KL.fib.main.clusters_cell.meta.data.csv
 
 please contact platoshkim@gmail.com to get these files. Please, Never hesitate and I will respond within 24 hours. 
