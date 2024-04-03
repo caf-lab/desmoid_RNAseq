@@ -15,12 +15,18 @@ Analysis of bulk RNAseq data of desmoid tumor and reactive fibrotic tissue
 
 [4] 03.WGCNA_gene_module_key.csv
 
-### Additional files required to run R codes of single cell analysis
+### Additional files required to run R codes for Keloid single cell analysis
 GSE163973_integrate.all.NS.all.KL.seurat.object.Rdata \\
 GSE163973_integrate.all.NS.all.KL.fib.seurat.object.Rdata \\
 GSE163973_integrate.all.NS.all.KL.fib.main.clusters.Rdata \\
 GSE163973_integrate.all.NS.all.KL_cell.meta.data.csv \\
 GSE163973_integrate.all.NS.all.KL.fib_cell.meta.data.csv \\
 GSE163973_integrate.all.NS.all.KL.fib.main.clusters_cell.meta.data.csv
+
+### Additional files required to run R codes for IPF (idiopathic pulmonary fibrosis) data
+GSE136831_RawCounts_Sparce.mtx.gz \\
+GSE136831_AllCells.GeneIDs.txt.gz \\
+GSE136831_AllCells.cellBarcodes.txt.gz \\
+GSE136831_AllCells.Samples.CellType.MetadataTable.txt
 
 please contact platoshkim@gmail.com to get these files. Please, Never hesitate and I will respond within 24 hours. 
