@@ -1,0 +1,191 @@
+date()  #  "Mon Aug 14 20:00:52 2023"
+
+library(dplyr)
+library(GEOquery)
+library(Seurat)
+library(ggplot2)
+library(tidyverse)
+library(gridExtra)
+
+#------------------------------------------------------------------------------#
+#-----             Prepare Seurat Object of GSE136831      ---------------------
+#------------------------------------------------------------------------------#
+# make seurat object
+
+cts <- ReadMtx(mtx = paste0('data/GSE136831_RawCounts_Sparce.mtx.gz'),
+               features = paste0('data/GSE136831_AllCells.GeneIDs.txt.gz'),
+               cells = paste0('data/GSE136831_AllCells.cellBarcodes.txt.gz'),
+               skip.feature = 1)
+ds <- CreateSeuratObject(counts = cts)
+
+
+# get metadata and upgrade meta data file
+metadt <- read.delim("data/GSE136831_AllCells.Samples.CellType.MetadataTable.txt", sep = "\t") #metadt: meta data table
+ds@meta.data[1:5, 1:3]
+ds$sample <- rownames(ds@meta.data)
+meta <- ds@meta.data
+dim(meta)  #  [1] 312928      4
+dim(metadt) # [1] 312928      9
+colnames(metadt)
+meta <- left_join(meta, metadt, by=c("sample" = "CellBarcode_Identity")) %>% column_to_rownames('sample')
+ds@meta.data <- meta
+
+# calculate mitochondrial percentage
+ds$mitoPercent <- PercentageFeatureSet(ds, pattern='^MT-')
+
+# Visualize QC metrics as a violin plot
+VlnPlot(ds, features = c("nFeature_RNA", "nCount_RNA", "mitoPercent"), ncol = 3)
+
+# perform standard workflow steps to figure out if we see any batch effects ---#
+ds <- NormalizeData(object = ds)
+ds <- FindVariableFeatures(object = ds)
+ds <- ScaleData(object = ds)
+ds <- RunPCA(object = ds)
+ElbowPlot(ds)
+ds <- FindNeighbors(object = ds, dims = 1:15)
+ds <- FindClusters(object = ds)
+ds <- RunUMAP(object = ds, dims = 1:15)
+
+# plot
+p1 <- DimPlot(ds, reduction = 'umap', group.by = 'Disease_Identity')
+p2 <- DimPlot(ds, reduction = 'umap', group.by = 'Subject_Identity')
+
+grid.arrange(p1, p2, ncol = 2, nrow = 1)
+
+
+# get additional meta adata
+geo_id <- "GSE136831"
+gse <- getGEO(geo_id, GSEMatrix = TRUE)
+gse$GSE136831_series_matrix.txt.gz$characteristics_ch1
+gse$GSE136831_series_matrix.txt.gz$title
+gse$GSE136831_series_matrix.txt.gz$geo_accession
+gse$GSE136831_series_matrix.txt.gz$`disease:ch1`
+gse$GSE136831_series_matrix.txt.gz %>% data.frame() %>% head(3)
+phenoData(gse[[1]]) 
+phenoData <- pData(phenoData(gse[[1]]))
+head(phenoData)
+
+
+p1 <- DimPlot(ds, reduction = 'umap', label = T, group.by = 'Manuscript_Identity') + theme(legend.position = "none")
+p2 <- DimPlot(ds, reduction = 'umap', label=T, group.by = 'Subclass_Cell_Identity') + theme(legend.position = "none")
+grid.arrange(p1, p2, ncol = 2, nrow = 1)
+
+p1 <- DimPlot(ds, reduction = 'umap', label = T, group.by = 'Manuscript_Identity') + theme(legend.position = "none")
+p2 <- DimPlot(ds, reduction = 'umap', group.by = 'Disease_Identity') 
+grid.arrange(p1, p2, ncol = 2, nrow = 1)
+
+DimPlot(ds, label = T)
+
+################################################################################
+# selection of fibroblast subpopulation-----------------------------------------
+################################################################################
+ds.fbst <- subset(ds, idents = c("15", "22", "25") )
+DimPlot(ds.fbst, label = T)
+ds.fbst@reductions$umap@cell.embeddings %>% as.data.frame() ->umap.value 
+toRemove <- umap.value %>% filter(umap_1 > -7.5 | umap_2 > -1.0 | umap_2 < -12.0) %>% rownames()
+ds.fbst_filtered <- ds.fbst[,!colnames(ds.fbst) %in% toRemove]
+# ds.fbst_filtered <- RenameIdents(object = ds.fbst_filtered, "fibroblast-1" = "A")
+DimPlot(ds.fbst_filtered)
+
+# plot of general pattern ------------------------------------------------------
+p1 <- DimPlot(ds.fbst_filtered, reduction = 'umap', label = T, group.by = 'Manuscript_Identity') + theme(legend.position = "none")
+p2 <- DimPlot(ds.fbst_filtered, reduction = 'umap', label=T, group.by = 'Subclass_Cell_Identity') + theme(legend.position = "none")
+grid.arrange(p1, p2, ncol = 2, nrow = 1)
+
+p1 <- DimPlot(ds.fbst_filtered, reduction = 'umap', label = T, group.by = 'Manuscript_Identity') + theme(legend.position = "none")
+p2 <- DimPlot(ds.fbst_filtered, reduction = 'umap', group.by = 'Disease_Identity') 
+grid.arrange(p1, p2, ncol = 2, nrow = 1)
+
+
+# Enrichment of ME16 desmoid specific eigengen gene set ------------------------
+gene_module_key = read.csv("Folder_for_GitHub/03.WGCNA_gene_module_key.csv", row.names = 1)
+gene_module_key %>% dplyr::filter(module == "ME16") %>% pull(gene) -> ME16.gene
+ME16.gene
+
+
+driver_ME16 = read.csv("Folder_for_GitHub/03.driver_gene_ME16.csv", row.names = 1)
+driver_ME16 %>% filter(gene.symbol %in% ME16.gene) %>% arrange(desc(corr.to.trait)) -> driver_ME16_filtered
+driver_ME16_filtered_pos <- driver_ME16_filtered[1:85,]
+driver_ME16_filtered_neg <- driver_ME16_filtered[86:123,]
+
+
+#-------------------------------------------------------------------------------
+ME16.pos.list <-list(driver_ME16_filtered_pos$gene.symbol)
+ds.fbst_filtered <- AddModuleScore(ds.fbst_filtered, features = ME16.pos.list, name = "ME16.pos", seed = 42)
+FeaturePlot(ds.fbst_filtered, features = "ME16.pos1")  
+library(RColorBrewer)
+plotCol = rev(brewer.pal(n = 7, name = "RdYlBu"))
+ggOut <- FeaturePlot(ds.fbst_filtered, reduction = "umap", pt.size = 0.5, 
+                     features = "ME16.pos1") + 
+  ggtitle("Enrichement of Desmoid-ME16.genes") +
+  scale_color_gradientn(colors = plotCol) + theme(aspect.ratio = 1)
+print(ggOut)
+
+#-------------------------------------------------------------------------------
+VlnPlot(ds.fbst_filtered, features = "ME16.pos1", group.by ='Disease_Identity' )
+
+
+
+
+ds.fbst_filtered$ME16.high <- ifelse(ds.fbst_filtered$ME16.pos1 > 0.1, 'High', 'Low')
+table(ds.fbst_filtered$ME16.high, ds.fbst_filtered$Disease_Identity)
+
+markers_ME16 <- FindMarkers(ds.fbst_filtered, ident.1 = "High", ident.2 = "Low", group.by = "ME16.high")
+markers_ME16.p <- markers_ME16 %>% filter(p_val<0.05 & avg_log2FC >1)
+
+
+###########################
+# Figure 5: Enrich R 
+###########################
+execute_steps = c(1)
+if (1 %in% execute_steps){
+  #install.packages("enrichR")
+  library(enrichR)
+  dbs <- listEnrichrDbs()
+  
+  ME16_enriched <- enrichr( rownames(markers_ME16.p), dbs$libraryName)
+  test <- ME16_enriched$GO_Biological_Process_2015 %>% filter( P.value < 0.05 ) %>% arrange( P.value )
+  test <- ME16_enriched$GO_Biological_Process_2023 %>% filter( P.value < 0.05 ) %>% arrange( P.value )
+  
+  
+  
+  ME16_enriched_df <- biMSigDB_Oncogenic_SignaturesME16_enriched_df <- bind_rows(ME16_enriched)[, c(1:7)]
+  ME16_enriched_filter_df <- dplyr::filter(ME16_enriched_df, P.value < 0.05)
+  test = ME16_enriched_df[grep( pattern = "HALLMAR", x = ME16_enriched_df$Term ),]
+  test = ME16_enriched_filter_df[grep( pattern = "COPD", x = ME16_enriched_filter_df$Term ),]
+  test = ME16_enriched_filter_df[grep( pattern = "FIBROBLAST", x = ME16_enriched_filter_df$Term ),]
+  test = ME16_enriched_filter_df[grep( pattern = "Fibroblast", x = ME16_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = ME16_enriched_filter_df[grep( pattern = "Idiopathic", x = ME16_enriched_filter_df$Term ),] %>% arrange( P.value )
+  test = ME16_enriched_filter_df[grep( pattern = "fibrosis", x = ME16_enriched_filter_df$Term ),] %>% arrange( P.value )
+  
+  selected_pathways <- c( "idiopathic pulmonary fibrosis DOID-0050156 human GSE24206 sample 867",
+                          "idiopathic pulmonary fibrosis DOID-0050156 human GSE44723 sample 851",
+                          "idiopathic pulmonary fibrosis DOID-0050156 human GSE24206 sample 872",
+                          "Idiopathic fibrosing alveolitis C0085786 human GSE21369 sample 321",
+                          "Rnaseq Idiopathic Pulmonary Fibrosis GSE116086 1",
+                          "Single Diverse Idiopathic Pulmonary GSE94555 1",
+                          "extracellular matrix structural constituent (GO:0005201)",
+                          "Wnt-protein binding (GO:0017147)",
+                          "extracellular matrix (GO:0031012)",
+                          "excitatory synapse (GO:0060076)",
+                          "fibrillar collagen trimer (GO:0005583)",
+                          "collagen fibril organization (GO:0030199)",
+                          "Wnt signaling pathway, planar cell polarity pathway (GO:0060071)",
+                          "Collagen-Containing Extracellular Matrix (GO:0062023)")
+  tmp <- ME16_enriched_filter_df %>% dplyr::filter(Term %in% selected_pathways)
+  tmp <- tmp[c(3, 7, 10, 11, 13, 14, 18, 19, 22),]
+  
+  # install.packages("ggbreak")
+  library("ggbreak")
+  ggplot( tmp, aes(x=Term, y=-log10(P.value), fill=Term))+geom_bar(stat="identity", position="dodge")+
+    scale_y_break(c(4.5, 6.7 ), scale = 1) +
+    scale_y_break(c(7, 10), scale = 0.5)+
+    coord_flip()+
+    theme(legend.position= "none", axis.text.x = element_text(face = "bold", color = "black"),
+          axis.text.y = element_text(hjust = 1, face = "bold", color = "black"),
+          plot.title = element_text(face = "bold", size = rel(1.2), hjust = 0.5), panel.background =element_blank(),
+          axis.title = element_text(face = "bold",size = rel(1)), axis.line = element_line(colour="black", size = .8),
+          panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          strip.background=element_rect(colour="#f0f0f0",fill="#f0f0f0"))
+  ggsave("results/2024.02/04.pathway-1.pdf")
+}
