@@ -8,5 +8,6 @@ Analysis of bulk RNAseq data of desmoid tumor and reactive fibrotic tissue
 ## 37 Desmoid tissues and 14 reactive fibrotic tissue
 ### Required file to run the code
 [1] 01.batch_corrected_RNAseq_raw_data_and_metadata.Rda
+[2] 02.bwnet.RDS
 
 please contact platoshkim@gmail.com to get these files. Please, Never hesitate and I will respond within 24 hours. 
