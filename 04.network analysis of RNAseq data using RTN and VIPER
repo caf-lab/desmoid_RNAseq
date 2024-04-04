@@ -1,0 +1,351 @@
+date() #  [1] "Wed Aug 23 16:24:25 2023"
+
+# name of original file: 02._02._04.STEP4.RTN_VIPER_2023.10.26.R
+
+library(impute)
+library(DESeq2)
+library(magrittr)
+library(WGCNA)
+library(ggplot2)
+library(tidyverse)
+library(CorLevelPlot)
+library(gridExtra)
+library(ComplexHeatmap)
+
+
+#------------------------------------------------------------------------------#
+#
+#                       Preparation of data for analysis
+#
+#------------------------------------------------------------------------------#
+load("Folder_for_GitHub/01.batch_corrected_RNAseq_raw_data_and_metadata.Rda")
+
+gsg <- goodSamplesGenes(t(ds))
+summary(gsg)
+gsg$allOK
+
+table(gsg$goodGenes)
+table(gsg$goodSamples)
+
+# remove genes that are detectd as outliers
+ds <- ds[gsg$goodGenes == TRUE,]
+
+all(rownames(metadata) == colnames(ds))  # Confirm that the result is "TRUE"
+
+dds <- DESeqDataSetFromMatrix(
+  countData = ds, # Our prepped data frame with counts
+  colData = metadata, # Data frame with annotation for our samples
+  design = ~Dx # Here we are not specifying a model
+)
+
+# Count normalization
+dds <- estimateSizeFactors(dds)
+sizeFactors(dds)
+# Normalizaed counts: extraction
+normalized_CAF_counts <- counts(dds, normalized=TRUE)
+dds = dds[rowSums(counts(dds) >=15) >= 43*0.75, ]
+dds_norm <- vst(dds)
+
+# Retrieve the normalized data from the `DESeqDataSet`
+normalized_counts <- assay(dds_norm) 
+rm(dds, dds_norm)
+
+
+#*******************************************************************************
+#
+#                       Analysis using RTN R package  
+#(Reconstruction of Transcriptional regulatory networks and analysis of Regulon)
+#
+#*******************************************************************************
+# https://bioconductor.org/packages/release/bioc/vignettes/RTN/inst/doc/RTN.html#transcriptional-network-analysis-tna
+library('RTN') 
+library(snow)  
+
+#------------------------------------------------------------------------------#
+#   Preparation of TNI (transcriptional network inferenece) [RTN] 
+#------------------------------------------------------------------------------#
+# TNI is elementary step in analytic pipeline in RTN
+load("Folder_for_GitHub/04.TF_list.rda") 
+
+
+tfs <- intersect(TFs, rownames(normalized_counts))
+row.data <- data.frame('symbol'= rownames(normalized_counts),
+                       'symbol2'= rownames(normalized_counts))
+col.data <- data.frame('sample'= colnames(normalized_counts),
+                       'sample2'= colnames(normalized_counts))
+rtni <- tni.constructor(expData = normalized_counts,
+                        regulatoryElements = tfs,
+                        rowAnnotation = row.data,
+                        colAnnotation = col.data)
+rm(row.data, col.data)
+
+options(cluster=snow::makeCluster(spec=20, "SOCK"))
+rtni <- tni.permutation(rtni, nPermutations = 2000, verbose=T)
+rtni <- tni.bootstrap(rtni)
+rtni <- tni.dpi.filter(rtni)
+stopCluster(getOption("cluster"))
+
+tni.regulon.summary(rtni)
+Twist2.ne <- tni.regulon.summary(rtni, regulatoryElements = "TWIST2")
+Twist2.ne$TWIST2
+
+regulons <- tni.get(rtni, what = "regulons.and.mode")
+regulons$TWIST2
+
+# Initialize an empty data frame to store the results
+regulon_df <- data.frame(TranscriptionFactor = character(), 
+                         TargetGene = character(), 
+                         AssociationValue = numeric(), 
+                         stringsAsFactors = FALSE)
+
+# Loop through each element of the list
+for(tf in names(regulons)) {
+  # Get the current regulon's data
+  regulon_data <- regulons[[tf]]
+  
+  # Check if regulon_data is not empty
+  if(length(regulon_data) > 0) {
+    # Create a temporary data frame for the current regulon
+    temp_df <- data.frame(TranscriptionFactor = tf,
+                          TargetGene = names(regulon_data),
+                          AssociationValue = as.numeric(regulon_data),
+                          stringsAsFactors = FALSE)
+    
+    # Combine the temporary data frame with the main one
+    regulon_df <- rbind(regulon_df, temp_df)
+  }
+}
+
+# Save the data frame to a text file
+write.table(regulon_df, file = "Folder_for_GitHub/Table_RTN_induced_regulons_table.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+
+
+
+
+
+regulons <- tni.get(rtni, what = "regulons")
+tni.get(rtni, what="status")
+
+g <- tni.graph(rtni, regulatoryElements = c("TWIST2"))
+g <- tni.graph(rtni, regulatoryElements = c("TWIST1"))
+g <- tni.graph(rtni, regulatoryElements = c("PRRX1"))
+g <- tni.graph(rtni, regulatoryElements = c("CTNNB1"))
+g <- tni.graph(rtni, regulatoryElements = c("SALL4"))
+g <- tni.graph(rtni, regulatoryElements = c("PRRX2"))
+library("RedeR")
+library("igraph")
+rdp <- RedPort()
+calld(rdp)
+addGraph(rdp, g=g, gzoom = 50)
+resetd(rdp)
+
+
+g <- tni.graph(rtni, regulatoryElements = c("TWIST2","CTNNB1","SALL4"))
+rdp <- RedPort()
+calld(rdp)
+addGraph(rdp, g, layout=NULL)
+addLegend.color(rdp, g, type="edge")
+addLegend.shape(rdp, g)
+relax(rdp, ps = TRUE)
+
+
+#------------------------------------------------------------------------------#
+#  TNA (Transcriptional network analysis) for total DEG btw desmoid and scar   #
+#------------------------------------------------------------------------------#
+# TNA is advanced step in analytic pipeline in RTN
+load("output/02._02.batch_corrected_ds_modified_metadata.Rda")
+dds_res_all %>% filter(symbol %in% rownames(normalized_counts)) %>% 
+  select(symbol, log2FoldChange) -> phenotype
+identical(rownames(normalized_counts), phenotype$symbol)   # [1] TRUE
+phenotype.vector = as.vector(phenotype$log2FoldChange)
+names(phenotype.vector) = phenotype$symbol
+
+dds_res_all %>% filter(log2FoldChange > 0.25 & padj <0.05 & baseMean > 200) %>% 
+  select(symbol) -> hits
+hits = as.vector(hits$symbol)
+rm(dds_res_all, phenotype, normalized_CAF_counts)
+
+
+
+row.data2 <- data.frame('symbol'= names(phenotype.vector),
+                       'symbol2'= names(phenotype.vector))
+# Input 1: 'object', a TNI object with regulons
+# Input 2: 'phenotype', a named numeric vector, usually log2 differential expression levels
+# Input 3: 'hits', a character vector, usually a set of differentially expressed genes
+# Input 4: 'phenoIDs', an optional data frame with gene anottation mapped to the phenotype
+rtna <- tni2tna.preprocess(object = rtni, 
+                           phenotype = phenotype.vector, 
+                           hits = hits, 
+                           phenoIDs = row.data2)
+
+# Run the MRA method
+rtna <- tna.mra(rtna)
+
+# Get MRA results;
+#..setting 'ntop = -1' will return all results, regardless of a threshold
+mra <- tna.get(rtna, what="mra", ntop = -1)
+head(mra)
+
+# Run the GSEA method
+# Please set nPermutations >= 1000
+rtna <- tna.gsea1(rtna, nPermutations=1500)
+# Get GSEA results
+gsea1 <- tna.get(rtna, what="gsea1", ntop = -1)
+head(gsea1)
+
+# Plot GSEA results
+tna.plot.gsea1(rtna, labPheno="abs(log2 fold changes)", ntop = -1)
+?(tna.plot.gsea1)
+
+# Run the GSEA-2T method
+# Please set nPermutations >= 1000
+rtna <- tna.gsea2(rtna, nPermutations = 1500)
+
+# Get GSEA-2T results
+gsea2 <- tna.get(rtna, what = "gsea2", ntop = -1)
+gsea2$differential
+gsea2$positive
+gsea2$negative
+head(gsea2$differential)
+# Plot GSEA-2T results
+tna.plot.gsea2(rtna, labPheno="log2 fold changes", tfs="TWIST2")
+
+
+
+
+
+
+
+
+#*******************************************************************************
+#
+#                       Aanlysis using VIPER R package 
+#   (Virtual Inference of protein activity by enriched regulon analysis)
+#
+#*******************************************************************************
+# Generation of network file that will be Processed in VIPER analysis
+net<- t(rtni@results$tn.ref)
+dim(net)  #[1]  1395 13571
+net[1:5,1:7]
+net.idx <- which(net != 0, arr.ind=T)  #arr.ind=T : return the results as array index
+net.val <- net[net.idx]
+net.src <- rownames(net)[net.idx[,1]]
+net.trg <- colnames(net)[net.idx[,2]]
+network<-cbind(net.src, net.trg, net.val)
+
+#------------------------------------------------------------------------------#
+#          VIPER step 1: Perform archne2regulon function 
+#------------------------------------------------------------------------------#
+library("viper")
+library(Biobase)
+
+exprsData <- normalized_counts
+phenoData <- metadata %>% select(Dx, Location)
+featureData <- data.frame(Description = paste0("This is ", rownames(exprsData)))
+rownames(featureData) <- rownames(exprsData)
+phenoData <- new("AnnotatedDataFrame", data = phenoData)
+featureData <- new("AnnotatedDataFrame", data = featureData)
+dset <- new("ExpressionSet", exprs = exprsData, phenoData = phenoData, featureData = featureData)
+rm(exprsData, phenoData, featureData)
+
+Des_regul <- aracne2regulon(afile = "result/2023-10-26/FIB_network.txt", dset, verbose = T)
+
+#------------------------------------------------------------------------------#
+#       VIPER step 2: Conventional analysis using msVIPER function
+#------------------------------------------------------------------------------#
+# msVIPER: multiple sample VIPER
+signature <- rowTtest(dset, "Dx", "Des", "Scar")
+signature <- (qnorm(signature$p.value/2, lower.tail = FALSE) * 
+                sign(signature$statistic))[, 1]
+nullmodel <- ttestNull(dset, "Dx7", "Des", "Scar", per=1000, verbose=T)
+mrs <- msviper(signature, Des_regul, nullmodel, verbose = TRUE, cores=20)
+summary(mrs)
+
+mrs.ledge <- ledge(mrs)
+aa=mrs.ledge$ledge
+mra <- summary(mrs,  4048)
+mra %>% arrange(desc(NES)) -> mra
+write.csv(mra, "Folder_for_GitHub/Table_VIPER_derived_result_01.msVIPER.csv")
+mrs.ledge$ledge$TWIST2
+mrs$regulon$TWIST2
+mrs$regulon$ZNF536
+
+
+pdf("result/2023-10-26/01.msVIPER_1.pdf")
+plot(mrs, as.character(mra[1:10,]$Regulon))
+dev.off()
+
+pdf("result/2023-10-26/01.msVIPER_1.1.pdf")
+plot(mrs, as.character(mra[1:15,]$Regulon))
+dev.off()
+
+pdf("result/2023-10-26/01.msVIPER_1.2.pdf")
+plot(mrs, as.character(mra[1:20,]$Regulon))
+dev.off()
+
+mra2 <- mra %>% dplyr::filter(NES > 3 | NES < -4 & FDR < 1E-3)
+mra3 <- mra %>% dplyr::filter(NES < -2)
+pdf("result/2023-10-26/01.msVIPER_2.pdf")
+plot(mrs, mra3$Regulon)
+dev.off()
+
+#------------------------------------------------------------------------------#
+#               VIPER step 3:   Boostrap msVIPER 
+#------------------------------------------------------------------------------#
+signature <- bootstrapTtest(dset, "Dx", "Des", "Scar", verbose=F)
+mrs2 <- msviper(signature, Des_regul, nullmodel, verbose = FALSE, cores = 20)
+mrs2 <- bootstrapmsviper(mrs2, "mode")
+
+pdf("result/2023-10-26/02.Boostrap_msVIPER_1.pdf")
+plot(mrs2, cex = .7)
+dev.off()
+
+summary(mrs2)
+mrs2.ledge <- ledge(mrs2)
+summary(mrs2.ledge)
+mra2 <- summary(mrs2,  4048 )
+mra2 %>% arrange(desc(NES)) -> mra2
+write.csv(mra2, "Folder_for_GitHub/Table_VIPER_derived_result_02.Boostrap_msVIPER.csv")
+mrs2.ledge$ledge$TWIST2
+
+pdf("result/2023-10-26/02.Boostrap_msVIPER_2.pdf")
+plot(mrs2, as.character(mra2[1:20,]$Regulon))
+dev.off()
+
+mra2.high <- mra2 %>% dplyr::filter(NES > 2)
+mra2.low <- mra2 %>% dplyr::filter(NES < -2)
+pdf("result/2023-10-26/02.Boostrap_msVIPER_3.pdf")
+plot(mrs2, mra2.low$Regulon)
+dev.off()
+
+pdf("result/2023-10-26/02.Boostrap_msVIPER_4.pdf")
+plot(mrs2, mra2.high$Regulon)
+dev.off()
+
+pdf("result/2023-10-26/02.Boostrap_msVIPER_5.pdf")
+plot(mrs2, mra2.low$Regulon[7:16])
+dev.off()
+
+
+mrshadow <- shadow(mrs2, regulators = 25, verbose = FALSE)
+summary(mrshadow, 4048)
+write.csv(mrshadow$shadow, "result/2023-10-26/02.mrshadow_shadow.csv")
+write.csv(summary(mrshadow, 4048)$msviper.results, "result/2023-10-26/02.mrshadow_results.csv")
+
+
+mrs3 <- msviperCombinatorial(mrs2, regulators = 25, verbose = FALSE)
+mrs3 <- msviperSynergy(mrs3, verbose = FALSE)
+summary(mrs3, 4048)
+summary(mrs3, 4048) %>% arrange(Synergy) -> mra_syn
+write.csv(mra_syn, "result/2023-10-26/02.mrs_synergy.csv")
+pdf("result/2023-10-26/02.mrs.synergy.pdf")
+plot(mrs3, 25, cex = .7)
+dev.off()
+
+pdf("result/2023-10-26/02.mrs.synergy-1.pdf")
+plot(mrs3, 10, cex = .7)
+dev.off()
+
+pdf("result/2023-10-26/02.mrs.synergy-2.pdf")
+plot(mrs3, 15, cex = .7)
+dev.off()
