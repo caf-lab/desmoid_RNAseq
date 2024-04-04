@@ -5,7 +5,7 @@ date() #  [1] "Wed Aug 23 16:24:25 2023"
 library(impute)
 library(DESeq2)
 library(magrittr)
-library(WGCNA)
+library(WGCNA)  
 library(ggplot2)
 library(tidyverse)
 library(CorLevelPlot)
@@ -62,7 +62,7 @@ library('RTN')
 library(snow)  
 
 #------------------------------------------------------------------------------#
-#   Preparation of TNI (transcriptional network inferenece) [RTN] 
+#   RTN step 1:  Preparation of TNI (transcriptional network inferenece)  
 #------------------------------------------------------------------------------#
 # TNI is elementary step in analytic pipeline in RTN
 load("Folder_for_GitHub/04.TF_list.rda") 
@@ -150,7 +150,7 @@ relax(rdp, ps = TRUE)
 
 
 #------------------------------------------------------------------------------#
-#  TNA (Transcriptional network analysis) for total DEG btw desmoid and scar   #
+# RTN step 2: TNA (Transcriptional network analysis)                           #
 #------------------------------------------------------------------------------#
 # TNA is advanced step in analytic pipeline in RTN
 load("output/02._02.batch_corrected_ds_modified_metadata.Rda")
