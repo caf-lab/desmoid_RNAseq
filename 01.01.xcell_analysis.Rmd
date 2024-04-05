@@ -1,0 +1,397 @@
+---
+title: "Study of microenvrionment in both desmoid and reactive fibrosis"
+output: html_notebook
+---
+
+### Load packages and dependences
+```{r warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(ggrepel)
+library(pheatmap)
+library(DESeq2)
+```
+  
+### Load the data
+```{r}
+load("./01.batch_corrected_RNAseq_raw_data_and_metadata.Rda")
+```
+
+### Processing the data
+```{r message=FALSE}
+gsg <- goodSamplesGenes(t(ds))
+summary(gsg)
+gsg$allOK
+
+table(gsg$goodGenes)
+table(gsg$goodSamples)
+
+# remove genes that are detectd as outliers
+ds <- ds[gsg$goodGenes == TRUE,]
+
+all(rownames(metadata) == colnames(ds))  # Confirm that the result is "TRUE"
+
+dds <- DESeqDataSetFromMatrix(
+  countData = ds, # Our prepped data frame with counts
+  colData = metadata, # Data frame with annotation for our samples
+  design = ~Dx # Here we are not specifying a model
+)
+
+# Count normalization
+dds <- estimateSizeFactors(dds)
+# sizeFactors(dds)
+# Normalizaed counts: extraction
+normalized_CAF_counts <- counts(dds, normalized=TRUE)
+dds = dds[rowSums(counts(dds) >=15) >= 43*0.75, ]
+dds_norm <- vst(dds)
+
+# Retrieve the normalized data from the `DESeqDataSet`
+normalized_counts <- assay(dds_norm) 
+rm(dds, dds_norm)
+```
+
+
+### Analysis of tissue heterogeneity using xCell packages
+
+Ref: xCell: digitally portraying the tissue cellular heterogeneity landscape  Genome Biol. 2017 Nov 15;18(1):220. (PMID: 29141660) 
+```{r}
+library(xCell)
+re <- xCellAnalysis(normalized_counts)
+```
+```{r}
+re[1:5,1:3]
+```
+```{r}
+rownames(re)
+```
+
+
+```{r}
+stat <- t.test(re['aDC', metadata %>% filter(Dx=="Des")%>% rownames()], 
+               re['aDC', metadata %>% filter(Dx=="Scar")%>% rownames()])
+stat$p.value
+stat$estimate
+stat$estimate[1]
+stat$estimate[2]
+```
+
+
+
+```{r}
+cell.type_df <- data.frame(cell_type = character(),                         
+                           p.value = numeric(),
+                           Desmoid = numeric(), 
+                           Scar = numeric(),
+                           stringsAsFactors = FALSE)
+
+# Loop through each element of the list
+for(cell.type in rownames(re)) {
+  # Get the current regulon's data
+  stat <- t.test(re[cell.type, metadata %>% filter(Dx=="Des")%>% rownames()],
+                 re[cell.type, metadata %>% filter(Dx=="Scar")%>% rownames()])
+  
+  # Check if regulon_data is not empty
+  if(length(cell.type_df) > 0) {
+    # Create a temporary data frame for the current regulon
+    temp_df <- data.frame(cell_type = cell.type,
+                          p.value = stat$p.value,
+                          Desmoid = stat$estimate[1],
+                          Scar = stat$estimate[2],
+                          stringsAsFactors = FALSE)
+    
+    # Combine the temporary data frame with the main one
+    cell.type_df <- rbind(cell.type_df, temp_df)
+  }
+}
+```
+
+
+```{r}
+# Assuming your p-values are in the second column of cell.type_df
+cell.type_df$fold.change <- cell.type_df[[3]]/cell.type_df[[4]] #Desmoid/Scar
+cell.type_df$adjusted_p.value <- p.adjust(cell.type_df$p.value, method = "BH")
+cell.type_df %>% arrange(desc(fold.change)) -> cell.type_df
+rownames(cell.type_df) <- NULL
+cell.type_df
+```
+
+```{r}
+write.csv(cell.type_df, "./Tables/Table_Enrichment_of_cell_types_in_desmoid_tumor_and_reactive_fibrosis.csv", row.names = F)
+```
+
+```{r}
+cell.type_df %>% filter(adjusted_p.value < 0.05) %>% pull(cell_type)  
+```
+
+#### activated dendritic cells
+```{r}
+pdf("./Xcell_figures/activated_dendritic_cells.pdf")
+boxplot(re['aDC', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['aDC', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "activated dendritic cells, p-value = 0.001082",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) #activated dendritic cells
+dev.off()
+```
+
+#### Basophils
+```{r}
+pdf("./Xcell_figures/Basophils.pdf")
+boxplot(re['Basophils', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['Basophils', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Basophils, p-value = 0.004993",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+#### Conventional Denderitic cells
+```{r}
+pdf("./Xcell_figures/conventional_dendritic_cells.pdf")
+boxplot(re['cDC', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['cDC', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Conventional Denderitic cells, p-value = 0.002536",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### Dendritic cells
+```{r}
+pdf("./Xcell_figures/Dendritic_cells.pdf")
+boxplot(re['DC', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['DC', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Dednritic cells, p-value = 0.000636",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### Endothelial cells
+```{r}
+pdf("./Xcell_figures/Endothelial_cells.pdf")
+boxplot(re['Endothelial cells', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['Endothelial cells', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Endothelial cells, p-value = 0.000058",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### Epithelial cells
+```{r}
+pdf("./Xcell_figures/Epithelial_cells.pdf")
+boxplot(re['Epithelial cells', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['Epithelial cells', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Epithelial cells, p-value = 0.000613",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### Immature dendritic cells
+```{r}
+pdf("./Xcell_figures/Immature_dendritic_cells.pdf")
+boxplot(re['iDC', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['iDC', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Immature dendritic cells, p-value = 0.001466",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" )
+dev.off()
+```
+
+
+#### lymphatic endothelial cells
+```{r}
+pdf("./Xcell_figures/lymphatic_endothelial_cells.pdf")
+boxplot(re['ly Endothelial cells', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['ly Endothelial cells', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "lymphatic endothelial cells, p-value = 0.000449",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### Macrophages M1
+```{r}
+pdf("./Xcell_figures/Macrophages_M1.pdf")
+boxplot(re['Macrophages M1', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['Macrophages M1', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Macrophages M1, p-value = 0.012807",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### Mast cells
+```{r}
+pdf("./Xcell_figures/Mast_cells.pdf")
+boxplot(re['Mast cells', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['Mast cells', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Mast cells, p-value = 0.001683",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+
+#### Microvascular Endothelial cells
+```{r}
+pdf("./Xcell_figures/Microvascular_Endothelial_cells.pdf")
+boxplot(re['mv Endothelial cells', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['mv Endothelial cells', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "microvascular Endothelial cells, p-value = 0.003506",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+
+#### Myocytes
+```{r}
+pdf("./Xcell_figures/Myocytes.pdf")
+boxplot(re['Myocytes', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['Myocytes', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Myocytes, p-value = 0.006955",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+
+#### naive B-cells
+```{r}
+pdf("./Xcell_figures/naive_B-cells.pdf")
+boxplot(re['naive B-cells', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['naive B-cells', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "naive B-cells, p-value = 0.000454",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### Neurons
+```{r}
+pdf("./Xcell_figures/Neurons.pdf")
+boxplot(re['Neurons', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['Neurons', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Neurons, p-value = 0.014057",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### Preadipocytes
+```{r}
+pdf("./Xcell_figures/Preadipocytes.pdf")
+boxplot(re['Preadipocytes', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['Preadipocytes', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Preadipocytes, p-value = 0.009501",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### Sebocytes
+```{r}
+pdf("./Xcell_figures/Sebocytes.pdf")
+boxplot(re['Sebocytes', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['Sebocytes', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Sebocytes, p-value = 0.000632",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### Th2 cells
+```{r}
+pdf("./Xcell_figures/Th2_cells.pdf")
+boxplot(re['Th2 cells', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['Th2 cells', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Th2 cells, p-value = 0.003861",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### Tregs
+```{r}
+pdf("./Xcell_figures/Tregs.pdf")
+boxplot(re['Tregs', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['Tregs', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "Tregs, p-value = 0.000136",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+## Stromascore and MicroenvironmentScore
+
+ImmuneScore = apply(adjustedScores[c('B-cells','CD4+ T-cells','CD8+ T-cells','DC','Eosinophils','Macrophages','Monocytes',
+'Mast cells','Neutrophils','NK cells'),],2,sum)/1.5
+
+StromaScore = apply(adjustedScores[c('Adipocytes','Endothelial cells','Fibroblasts'),],2,sum)/2
+
+MicroenvironmentScore = ImmuneScore+StromaScore
+
+adjustedScores = rbind(adjustedScores,ImmuneScore,StromaScore,MicroenvironmentScore)
+
+
+#### StromaScore
+```{r}
+pdf("./Xcell_figures/StromaScore.pdf")
+boxplot(re['StromaScore', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['StromaScore', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "StromaScore, p-value = 0.000134",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
+
+#### MicroenvironmentScore
+```{r}
+pdf("./Xcell_figures/MicroenvironmentScore.pdf")
+boxplot(re['MicroenvironmentScore', metadata %>% filter(Dx=="Des")%>% rownames()], 
+        re['MicroenvironmentScore', metadata %>% filter(Dx=="Scar")%>% rownames()],
+        main = "MicroenvironmentScore, p-value = 0.003636",
+        xlab = "Desmoid tumoe    vs    Reactive fibrosis",
+        col = c("#B85042","#A7BEAE"),
+        border = "black" ) 
+dev.off()
+```
+
