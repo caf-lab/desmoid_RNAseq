@@ -1,0 +1,384 @@
+---
+title: "DEG btw desmoid and scar-pathway analysis"
+output: html_notebook
+---
+
+## Load R packages and dependecies
+```{r warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(GSVA)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+```
+
+
+## Load the data
+The original file: result/2024-02/02.DDx-Desmoid_vs_Scar.csv
+```{r echo=TRUE}
+ds <- read.csv("./Folder_for_GitHub/01.DDx-Desmoid_vs_Scar.csv")
+```
+
+
+## Preparing the data for GSEA
+```{r echo=TRUE}
+ds %>% filter(log2FoldChange >0.2 & padj <0.05 & !is.na(entrez) & baseMean >500) %>% 
+  pull(entrez) %>% as.character() -> DESMOID.high
+
+ds %>% filter(log2FoldChange < -0.2 & padj <0.05 & !is.na(entrez)& baseMean >500) %>% 
+  pull(entrez) %>% as.character() -> SCAR.high
+
+ds %>% filter(baseMean >500) %>% arrange(desc(log2FoldChange)) %>%
+  filter(!is.na(entrez)) %>% dplyr::select(entrez, log2FoldChange) -> geneList.temp
+geneList.temp %>% pull(log2FoldChange) -> geneList
+names(geneList) <- geneList.temp$entrez
+geneList.dedup <- geneList[!duplicated(names(geneList))==TRUE]
+```
+
+
+## DESMOID: GRA using GO database : cellular component
+```{r}
+ego <- enrichGO(gene          = DESMOID.high,
+                OrgDb         = org.Hs.eg.db,
+                ont           = "CC",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.01,
+                qvalueCutoff  = 0.05,
+                readable      = TRUE)
+# goplot(ego)  
+ego %>% as.data.frame() -> result1.1
+Fit <- plot(barplot(ego, showCategory = 20))
+print(Fit)
+```
+
+## DESMOID: GRA using GO database : Biological Process
+```{r}
+ego <- enrichGO(gene          = DESMOID.high,
+                OrgDb         = org.Hs.eg.db,
+                ont           = "BP",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.01,
+                qvalueCutoff  = 0.05,
+                readable      = TRUE)
+ego@result %>% as.data.frame() -> result1.1
+Fit <- plot(barplot(ego, showCategory = 20))
+print(Fit)
+```
+
+## DESMOID: GRA using GO database : Molecular function
+```{r}
+ego <- enrichGO(gene          = DESMOID.high,
+                OrgDb         = org.Hs.eg.db,
+                ont           = "MF",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.01,
+                qvalueCutoff  = 0.05,
+                readable      = TRUE)
+ego@result %>% as.data.frame() -> result1.1
+Fit <- plot(barplot(ego, showCategory = 20))
+print(Fit)
+```
+
+## SCAR: GRA using GO database : cellular function 
+```{r}
+ego <- enrichGO(gene          = SCAR.high,
+                OrgDb         = org.Hs.eg.db,
+                ont           = "CC",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.01,
+                qvalueCutoff  = 0.05,
+                readable      = TRUE)
+# goplot(ego)  
+ego %>% as.data.frame() -> result1.1
+Fit <- plot(barplot(ego, showCategory = 20))
+print(Fit)
+```
+
+## SCAR: GRA using GO database : Biological Process 
+```{r}
+ego <- enrichGO(gene          = SCAR.high,
+                OrgDb         = org.Hs.eg.db,
+                ont           = "BP",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.01,
+                qvalueCutoff  = 0.05,
+                readable      = TRUE)
+ego %>% as.data.frame() -> result1.1
+Fit <- plot(barplot(ego, showCategory = 20))
+print(Fit)
+```
+
+## SCAR: GRA using GO database : Mological function 
+```{r}
+ego <- enrichGO(gene          = SCAR.high,
+                OrgDb         = org.Hs.eg.db,
+                ont           = "MF",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.01,
+                qvalueCutoff  = 0.05,
+                readable      = TRUE)
+ego %>% as.data.frame() -> result1.1
+Fit <- plot(barplot(ego, showCategory = 20))
+print(Fit)
+```
+
+## DESMOID: GSEA using GO database : cellular component 
+```{r}
+# https://support.bioconductor.org/p/99810/
+gsea.cc <- gseGO(geneList     = geneList.dedup,
+              OrgDb        = org.Hs.eg.db,
+              ont          = "CC",
+              minGSSize    = 100,
+              maxGSSize    = 500,
+              pvalueCutoff = 0.05,
+              nPermSimple  = 1000000,
+              verbose      = FALSE)
+# goplot(gsea.cc)   
+```
+
+
+```{r}
+gsea.cc@result %>% as.data.frame() %>% arrange(desc(NES))-> result1.1
+Idx <- which(gsea.cc$Description == "contractile fiber")
+gseaplot(gsea.cc, by = "all", title = gsea.cc$Description[Idx], geneSetID = Idx, color.line="black")
+```
+GO:0043292 contractile fiber: NES:1.805612 p_val=1.000000e-10 p.adjust=3.450000e-09 qval=2.342105e-09
+
+
+
+## DESMOID: GSEA using GO database : biological process 
+```{r}
+gsea.bp <- gseGO(geneList     = geneList.dedup,
+                 OrgDb        = org.Hs.eg.db,
+                 ont          = "BP",
+                 minGSSize    = 100,
+                 maxGSSize    = 500,
+                 pvalueCutoff = 0.05,
+                 nPermSimple  = 1000000,
+                 verbose      = FALSE)
+```
+
+```{r}
+gsea.bp@result %>% as.data.frame() %>% arrange(desc(NES)) -> result1.1
+pdf("./GSEA/gsea.bp_striated_muscle_contraction.pdf")
+Idx <- which(gsea.bp$Description == "striated muscle contraction")
+gseaplot(gsea.bp, by = "all", title = gsea.bp$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GO:0006941, striated muscle contraction: NES:1.799614,  p_val=5.972635e-09, p.adjust=2.945452e-07, qval=2.011835e-07
+
+```{r}
+pdf("./GSEA/gsea.bp_leukocyte mediated immunity.pdf")
+Idx <- which(gsea.bp$Description == "leukocyte mediated immunity")
+gseaplot(gsea.bp, by = "all", title = gsea.bp$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GO:0002443, leukocyte mediated immunity, NES:-2.276160, p.val=1.000000e-10, p.adjust=1.041111e-08, qval=7.111111e-09
+
+
+
+```{r}
+pdf("./GSEA/gsea.bp_lymphocyte mediated immunity.pdf")
+Idx <- which(gsea.bp$Description == "lymphocyte mediated immunity")
+gseaplot(gsea.bp, by = "all", title = gsea.bp$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GO:0002449, lymphocyte mediated immunity,NES:-2.144630, p.val=4.900061e-10, p.adjust=4.012698e-08, qval=2.740797e-08
+
+
+```{r}
+pdf("./GSEA/gsea.bp_tumor necrosis factor production.pdf")
+Idx <- which(gsea.bp$Description == "tumor necrosis factor production")
+gseaplot(gsea.bp, by = "all", title = gsea.bp$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GO:0032640, tumor necrosis factor production, NES:-2.125325, p.val=5.030917e-08, p.adjust=1.745915e-06, q.val=1.192514e-06
+
+```{r}
+pdf("./GSEA/gsea.bp_activation of immune response.pdf")
+Idx <- which(gsea.bp$Description == "activation of immune response")
+gseaplot(gsea.bp, by = "all", title = gsea.bp$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GO:0002253 activation of immune response, NES:-2.048426, pval=1.000000e-10, p.adjust=1.041111e-08, qval=7.111111e-09
+
+```{r}
+pdf("./GSEA/gsea.bp_adaptive immune response.pdf")
+Idx <- which(gsea.bp$Description == "adaptive immune response")
+gseaplot(gsea.bp, by = "all", title = gsea.bp$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GO:0002250 adaptive immune response NES:-1.991511, pval=0.0000000001, p.adjust=1.041111e-08, qval=7.111111e-09
+
+
+```{r}
+pdf("./GSEA/gsea.bp_positive regulation of T cell activation.pdf")
+Idx <- which(gsea.bp$Description == "positive regulation of T cell activation")
+gseaplot(gsea.bp, by = "all", title = gsea.bp$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GO:0050870 positive regulation of T cell activation NES:-1.821711 pval=1.790241e-06 p.adust=2.713274e-05 qval=1.853250e-05
+
+
+```{r}
+pdf("./GSEA/gsea.bp_T cell proliferation.pdf")
+Idx <- which(gsea.bp$Description == "T cell proliferation")
+gseaplot(gsea.bp, by = "all", title = gsea.bp$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GO:0042098 T cell proliferation NES:-1.680865 pval=1.798944e-04 p.adjust=0.0013272521 qval=9.065543e-04
+
+
+## DESMOID: GSEA using GO database : Molecular Function 
+```{r}
+gsea.mf <- gseGO(geneList     = geneList.dedup,
+                 OrgDb        = org.Hs.eg.db,
+                 ont          = "MF",
+                 minGSSize    = 100,
+                 maxGSSize    = 500,
+                 pvalueCutoff = 0.05,
+                 nPermSimple  = 1000000,
+                 verbose      = FALSE)
+```
+
+```{r}
+gsea.mf@result %>% as.data.frame() %>% arrange(desc(NES)) -> result1.1
+pdf("./GSEA/gsea.bp_gated channel activity.pdf")
+Idx <- which(gsea.mf$Description == "gated channel activity")
+gseaplot(gsea.mf, by = "all", title = gsea.mf$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GO:0022836 gated channel activity NES:1.797640 pval=4.549420e-09 p.adjust=2.957123e-07 qval=2.466264e-07
+
+
+## GSEA analysis using msigdb
+##### https://cran.r-project.org/web/packages/msigdbr/vignettes/msigdbr-intro.html
+```{r}
+library(msigdbr)
+msigdbr_show_species()
+m_df <- msigdbr(species = "Homo sapiens")
+head(m_df, 2) %>% as.data.frame
+unique(m_df$gs_subcat)
+```
+
+### ALL msigdb gene sets 
+```{r}
+m_t2g <- m_df %>% dplyr::select(gs_name, entrez_gene)
+em <- enricher(DESMOID.high, TERM2GENE=m_t2g)
+em %>% as.data.frame() -> result1.1
+```
+
+
+```{r}
+gsea.all <- GSEA(geneList.dedup, TERM2GENE = m_t2g, nPermSimple = 1000000)
+```
+
+```{r}
+gsea.all %>% as.data.frame() -> result1.1
+pdf("./GSEA/gsea.bp_GSE15659_RESTING_TREG_VS_NONSUPPRESSIVE_TCELL_UP.pdf")
+Idx <- which(gsea.all$Description == "GSE15659_RESTING_TREG_VS_NONSUPPRESSIVE_TCELL_UP")
+gseaplot(gsea.all, by = "all", title = gsea.all$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GSE15659_RESTING_TREG_VS_NONSUPPRESSIVE_TCELL_UP NES:1.609330, pval=0.0001621542, p.adjust=0.004018443 qval=0.003375783
+
+### Hall mark gene sets
+```{r}
+H_t2g <- msigdbr(species = "Homo sapiens", category = "H") %>%
+  dplyr::select(gs_name, entrez_gene)
+gsea.h <- GSEA(geneList.dedup, TERM2GENE = H_t2g)
+gsea.all %>% as.data.frame() -> result1.1
+```
+
+
+### C2 Curated gene sets  CGP chemical and genetic perturbations
+```{r}
+C2CGP_t2g <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CGP") %>%
+  dplyr::select(gs_name, entrez_gene)
+gsea.c2cgp <- GSEA(geneList.dedup, TERM2GENE = C2CGP_t2g, nPermSimple = 1000000)
+gsea.c2cgp %>% as.data.frame() %>% arrange(desc(NES))-> result1.1
+```
+
+
+### C5 ontology gene sets  HPO: human phenotype ontology
+```{r}
+C5HPO_t2g <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "HPO") %>%
+  dplyr::select(gs_name, entrez_gene)
+gsea.c5hpo <- GSEA(geneList.dedup, TERM2GENE = C5HPO_t2g, nPermSimple = 1000000)
+gsea.c5hpo %>% as.data.frame() %>% arrange(desc(NES))-> result1.1
+```
+
+
+### C3 regultatory target gene sets TFT: transcription factor targets 
+TFT_LEGACY subset of TFT (browse 610 gene sets)
+```{r}
+C3TF_legacy_t2g <- msigdbr(species = "Homo sapiens", category = "C3", subcategory = "TFT:TFT_Legacy") %>% 
+  dplyr::select(gs_name, entrez_gene)
+gsea.c3tft_leg <- GSEA(geneList.dedup, TERM2GENE = C3TF_legacy_t2g, nPermSimple = 1000000)
+gsea.c3tft_leg %>% as.data.frame() %>% arrange(desc(NES))-> result1.1
+```
+
+### C3 regultatory target gene sets TFT: transcription factor targets 
+GTRD subset of TFT (browse 505 gene sets)
+```{r}
+C3TF_GTRD_t2g <- msigdbr(species = "Homo sapiens", category = "C3", subcategory = "TFT:GTRD") %>% 
+  dplyr::select(gs_name, entrez_gene)
+gsea.c3tft_gtrd <- GSEA(geneList.dedup, TERM2GENE = C3TF_GTRD_t2g, nPermSimple = 1000000)
+gsea.c3tft_gtrd %>% as.data.frame() %>% arrange(desc(NES))-> result1.1
+```
+
+### C6: oncogenic signature gene sets (browse 189 gene sets)
+```{r}
+C6_t2g <- msigdbr(species = "Homo sapiens", category = "C6") %>% 
+  dplyr::select(gs_name, entrez_gene)
+gsea.c6 <- GSEA(geneList.dedup, TERM2GENE = C6_t2g, nPermSimple = 1000000)
+gsea.c6 %>% as.data.frame() %>% arrange(desc(NES))-> result1.1
+```
+```{r}
+Idx <- which(gsea.c6$Description == "KRAS.KIDNEY_UP.V1_UP")
+gseaplot(gsea.c6, by = "all", title = gsea.c6$Description[Idx], geneSetID = Idx, color.line="black")
+```
+
+
+
+### C7: immunologic signature gene sets ImmuneSigDB subset of C7 (browse 4872 gene sets)
+```{r}
+C7_t2g<- msigdbr(species = "Homo sapiens", category = "C7", subcategory = "IMMUNESIGDB") %>% 
+  dplyr::select(gs_name, entrez_gene)
+gsea.c7 <- GSEA(geneList.dedup, TERM2GENE = C7_t2g, nPermSimple = 1000000)
+```
+
+```{r}
+gsea.c7 %>% as.data.frame() %>% arrange(desc(NES))-> result1.1
+pdf("./GSEA/gsea.bp_GSE37605_TREG_VS_TCONV_C57BL6_FOXP3_IRES_GFP_UP.pdf")
+Idx <- which(gsea.c7$Description == "GSE37605_TREG_VS_TCONV_C57BL6_FOXP3_IRES_GFP_UP")
+gseaplot(gsea.c7, by = "all", title = gsea.c7$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GSE37605_TREG_VS_TCONV_C57BL6_FOXP3_IRES_GFP_UP NES:1.807670 pval=4.308232e-06 p.adjust=0.000255972 qval=0.0002302885
+
+```{r}
+pdf("./GSEA/gsea.bp_GSE37605_TREG_VS_TCONV_C57BL6_FOXP3_FUSION_GFP_UP.pdf")
+Idx <- which(gsea.c7$Description == "GSE37605_TREG_VS_TCONV_C57BL6_FOXP3_FUSION_GFP_UP")
+gseaplot(gsea.c7, by = "all", title = gsea.c7$Description[Idx], geneSetID = Idx, color.line="black")
+dev.off()
+```
+GSE37605_TREG_VS_TCONV_C57BL6_FOXP3_FUSION_GFP_UP NES:1.650602 pval=2.527618e-04 p.adjust=0.006282937 qval=0.0056525255
+
+### C8: cell type signature gene sets (browse 830 gene sets)
+```{r}
+C8_t2g<- msigdbr(species = "Homo sapiens", category = "C8") %>% 
+  dplyr::select(gs_name, entrez_gene)
+gsea.c8 <- GSEA(geneList.dedup, TERM2GENE = C8_t2g, nPermSimple = 1000000)
+gsea.c8 %>% as.data.frame() %>% arrange(desc(NES))-> result1.1
+```
+
+
+```{r}
+save(gsea.all, gsea.bp, gsea.c2cgp, gsea.c3tft, gsea.c3tft_gtrd, gsea.c3tft_leg,
+     gsea.c5hpo, gsea.c6, gsea.c7, gsea.c8, gsea.cc, gsea.h, gsea.mf, 
+     file="./Desmoid_scar_GSEA.Rda")
+```
+
+
+
