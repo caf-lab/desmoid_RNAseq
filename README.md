@@ -11,11 +11,9 @@ Analysis of bulk RNAseq data of desmoid tumor and reactive fibrotic tissue
 
 [2] 02.bwnet.RDS
 
-[3] 03.driver_gene_ME16.csv
+[3] 03.driver_gene_ME16.csv  //  03.WGCNA_gene_module_key.csv
 
-[4] 03.WGCNA_gene_module_key.csv
-
-[5] 04.TF_list.rda
+[4] 04.TF_list.rda
 
 ### Additional files required to run R codes for Keloid single cell analysis
 GSE163973_integrate.all.NS.all.KL.seurat.object.Rdata \\
