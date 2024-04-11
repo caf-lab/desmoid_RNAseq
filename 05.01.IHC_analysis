@@ -18,7 +18,7 @@ library(pROC)
 ```
 
 ## Expression of Beta-catenin (IHC)
-```{r warning=FALSE}
+```{r warning=FALSE, message=FALSE}
 B_cat=read_excel("../SHK_scoring/Beta-catenin.xlsx", sheet = 'Desmoid_SHK') 
 B_cat %>% group_by(Dx) %>% summarise(n(), mean(IHC_score), sd(IHC_score),max(IHC_score))
 
