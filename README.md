@@ -15,6 +15,9 @@ Analysis of bulk RNAseq data of desmoid tumor and reactive fibrotic tissue
 
 [4] 04.TF_list.rda
 
+[5] Beta-catenin.xlsx // CTHRC1.xlsx // SALL4.xlsx // TWIST2.xlsx // LRRC15.xlsx // SHOX2.xlsx
+
+
 ### Additional files required to run R codes for Keloid single cell analysis
 GSE163973_integrate.all.NS.all.KL.seurat.object.Rdata \\
 GSE163973_integrate.all.NS.all.KL.fib.seurat.object.Rdata \\
