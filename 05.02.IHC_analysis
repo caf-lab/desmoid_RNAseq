@@ -19,7 +19,7 @@ library(pROC)
 
 
 ## Calculation of AUC score (IHC)
-```{r}
+```{r, message=FALSE}
 B_cat=read_excel("../SHK_scoring/Beta-catenin.xlsx", sheet = 'Desmoid_SHK') 
 CTH=read_excel("../SHK_scoring/CTHRC1.xlsx", sheet = 'Desmoid_SHK') 
 LRRC15=read_excel("../SHK_scoring/LRRC15.xlsx", sheet = 'Desmoid_SHK') 
