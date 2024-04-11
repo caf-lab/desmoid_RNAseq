@@ -1,0 +1,115 @@
+---
+title: "Dx significance of markers"
+author: "Seok-hyung Kim"
+date: "2024-03-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading R packages
+```{r warning=FALSE, message=FALSE}
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(pROC)
+```
+
+
+## Calculation of AUC score (IHC)
+```{r}
+B_cat=read_excel("../SHK_scoring/Beta-catenin.xlsx", sheet = 'Desmoid_SHK') 
+CTH=read_excel("../SHK_scoring/CTHRC1.xlsx", sheet = 'Desmoid_SHK') 
+LRRC15=read_excel("../SHK_scoring/LRRC15.xlsx", sheet = 'Desmoid_SHK') 
+SALL4=read_excel("../SHK_scoring/SALL4.xlsx", sheet = 'Desmoid_SHK') 
+SHOX2=read_excel("../SHK_scoring/SHOX2.xlsx", sheet = 'Desmoid_SHK') 
+TWIST2=read_excel("../SHK_scoring/TWIST2.xlsx", sheet = 'Desmoid_SHK')
+colnames(TWIST2)[12] <- "IHC_score"
+
+df <- data.frame('B_cat'= B_cat$IHC_score,
+                 'CTHRC1' = CTH$IHC_score,
+                 'LRRC15' = LRRC15$IHC_score,
+                 'SALL4' = SALL4$IHC_score,
+                 'SHOX2' = SHOX2$IHC_score,
+                 'TWIST2' = TWIST2$IHC_score,
+                 'Dx' = B_cat$Dx) 
+df$Dx2 = ifelse(df$Dx =="Desmoid", 1, 0)
+Diag_DF <- data.frame(Attribute=c(colnames(df)[1:6]), AUC=NA)
+
+for(i in 1:nrow(Diag_DF)){
+  roc_result <- roc(df$Dx2, df[,as.character(Diag_DF$Attribute[i])])   #
+  Diag_DF[i,'AUC'] <- roc_result$auc  
+}
+
+Diag_DF <- Diag_DF[order(-Diag_DF$AUC),]   # AUC 값을 오름차순 정렬합니다.
+Diag_DF 
+```
+
+
+## Calculation of AUC score, Sensitivity and Specificity
+```{r}
+library(reportROC)
+# Ref: https://m.blog.naver.com/sharp_kiss/221826800044
+
+ROC_DF <- data.frame(Attribute=c(colnames(df)[1:6]), AUC=NA,
+                     AUC.low=NA, AUC.up=NA, Cutoff=NA,
+                     SE=NA, SE.low=NA, SE.high=NA,
+                     SP=NA, SP.low=NA, SP.high=NA)
+
+for(i in 1:nrow(ROC_DF)){
+  roc_result <- reportROC(df$Dx2, df[,i])     
+  ROC_DF[i, c(2:11)] <- c(roc_result$AUC, roc_result$AUC.low, roc_result$AUC.up,
+                           roc_result$Cutoff, roc_result$SEN, roc_result$SEN.low,
+                           roc_result$SEN.up, roc_result$SPE, roc_result$SPE.low,
+                           roc_result$SEN.up)
+}
+ROC_DF <- ROC_DF %>% arrange(desc(AUC))
+ROC_DF
+```
+
+
+## B catenin: AUC score, Sensitivity and Specificity
+Sens : Sensitivity
+Spec : Specificity
+PPV : positive predictive value
+NPV : Negative predictive value
+```{r}
+# ref: https://bookdown.org/cardiomoon/roc/intro.html
+library(multipleROC)
+library(moonBook)
+multipleROC(Dx2~B_cat,data=df)
+table(df$B_cat >=1,df$Dx2)
+```
+
+## Twist2: AUC score, Sensitivity and Specificity
+```{r}
+multipleROC(Dx2~TWIST2,data=df)
+table(df$TWIST2 >=25,df$Dx2)
+```
+
+## LRRC15: AUC score, Sensitivity and Specificity
+```{r}
+multipleROC(Dx2~LRRC15,data=df)
+table(df$LRRC15 >=70,df$Dx2)
+```
+
+## SHOX2: AUC score, Sensitivity and Specificity
+```{r}
+multipleROC(Dx2~SHOX2,data=df)
+table(df$SHOX2 >=30,df$Dx2)
+```
+
+## SALL4: AUC score, Sensitivity and Specificity
+```{r}
+multipleROC(Dx2~SALL4,data=df)
+table(df$SALL4 >=35,df$Dx2)
+```
+
+## CTHRC1: AUC score, Sensitivity and Specificity
+```{r}
+multipleROC(Dx2~CTHRC1,data=df)
+table(df$CTHRC1 >=100,df$Dx2)
+```
+
