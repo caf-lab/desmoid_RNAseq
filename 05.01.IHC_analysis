@@ -1,0 +1,200 @@
+---
+title: "IHC results of ME16 genes"
+author: "Seok-hyung Kim"
+date: "2024-03-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## loading package
+```{r warning=FALSE, message=FALSE}
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(pROC)
+```
+
+## Expression of Beta-catenin (IHC)
+```{r warning=FALSE}
+B_cat=read_excel("../SHK_scoring/Beta-catenin.xlsx", sheet = 'Desmoid_SHK') 
+B_cat %>% group_by(Dx) %>% summarise(n(), mean(IHC_score), sd(IHC_score),max(IHC_score))
+
+ggplot(B_cat, aes(x = Dx, y = IHC_score)) + 
+  geom_boxplot()+
+  ylim(0,300)+
+  geom_jitter(shape=16, size=2, position=position_jitter(0.15))+
+  ggtitle("Beta-catenin")+ 
+  theme_classic()
+# ggsave("Result/2024_03/Beta-catenin_boxplot_1.pdf")
+t.test(B_cat$IHC_score ~ B_cat$Dx)
+```
+
+## Expression of CTHRC1 (IHC)
+```{r warning=FALSE}
+CTH=read_excel("../SHK_scoring/CTHRC1.xlsx", sheet = 'Desmoid_SHK') 
+CTH %>% group_by(Dx) %>% summarise(n(), mean(IHC_score), sd(IHC_score),max(IHC_score))
+
+ggplot(CTH, aes(x = Dx, y = IHC_score)) + 
+  geom_boxplot()+
+  ylim(0,300)+
+  geom_jitter(shape=16, size=2,position=position_jitter(0.15))+
+  ggtitle("CTHRC1")+ 
+  theme_classic()
+# ggsave("Result/2024_03/CTHRC1_boxplot_1.pdf")
+t.test(CTH$IHC_score ~ CTH$Dx)
+```
+
+## Expression of LRRC15 (IHC)
+```{r warning=FALSE}
+LRRC15=read_excel("../SHK_scoring/LRRC15.xlsx", sheet = 'Desmoid_SHK')
+LRRC15 %>% group_by(Dx) %>% summarise(n(), mean(IHC_score), sd(IHC_score),max(IHC_score))
+
+ggplot(LRRC15, aes(x = Dx, y = IHC_score)) + 
+  geom_boxplot()+
+  ylim(0,300)+
+  geom_jitter(shape=16, size=2, position=position_jitter(0.15))+
+  ggtitle("LRRC15")+ 
+  theme_classic()
+# ggsave("Result/2024_03/LRRC15_boxplot_1.pdf")
+t.test(LRRC15$IHC_score ~ LRRC15$Dx)
+```
+
+## Expression of SALL4 (IHC)
+```{r warning=FALSE}
+SALL4=read_excel("../SHK_scoring/SALL4.xlsx", sheet = 'Desmoid_SHK') 
+SALL4 %>% group_by(Dx) %>% summarise(n(), mean(IHC_score), sd(IHC_score),max(IHC_score))
+
+ggplot(SALL4, aes(x = Dx, y = IHC_score)) + 
+  geom_boxplot()+
+  ylim(0,300)+
+  geom_jitter(shape=16, size=2, position=position_jitter(0.15))+
+  ggtitle("SALL4")+ 
+  theme_classic()
+# ggsave("Result/2024_03/SALL4_boxplot_1.pdf")
+t.test(SALL4$IHC_score ~ SALL4$Dx)
+```
+
+## Expression of SHOX2 (IHC)
+```{r warning=FALSE}
+SHOX2=read_excel("../SHK_scoring/SHOX2.xlsx", sheet = 'Desmoid_SHK') 
+SHOX2 %>% group_by(Dx) %>% summarise(n(), mean(IHC_score), sd(IHC_score),max(IHC_score))
+
+ggplot(SHOX2, aes(x = Dx, y = IHC_score)) + 
+  geom_boxplot()+
+  ylim(0,300)+
+  geom_jitter(shape=16, size=2, position=position_jitter(0.15))+
+  ggtitle("SHOX2")+ 
+  theme_classic()
+# ggsave("Result/2024_03/SHOX2_boxplot_1.pdf")
+t.test(SHOX2$IHC_score ~ SHOX2$Dx)
+```
+
+
+## Expression of TWIST2 (IHC)
+```{r warning=FALSE}
+TWIST2=read_excel("../SHK_scoring/TWIST2.xlsx", sheet = 'Desmoid_SHK')
+colnames(TWIST2)[12] <- "IHC_score"
+TWIST2 %>% group_by(Dx) %>% summarise(n(), mean(IHC_score, na.rm = T), 
+                                      sd(IHC_score, na.rm=T),max(IHC_score, na.rm = T))
+
+ggplot(TWIST2, aes(x = Dx, y = IHC_score)) + 
+  geom_boxplot()+
+  ylim(0,300)+
+  geom_jitter(shape=16, size=2, position=position_jitter(0.15))+
+  ggtitle("TWIST2")+ 
+  theme_classic()
+# ggsave("Result/2024_03/TWIST2_boxplot_1.pdf")
+t.test(TWIST2$IHC_score ~ TWIST2$Dx)
+```
+
+
+## Calculation of AUC score (IHC)
+```{r message=FALSE}
+df <- data.frame('B_cat'= B_cat$IHC_score,
+                 'CTHRC1' = CTH$IHC_score,
+                 'LRRC15' = LRRC15$IHC_score,
+                 'SALL4' = SALL4$IHC_score,
+                 'SHOX2' = SHOX2$IHC_score,
+                 'TWIST2' = TWIST2$IHC_score,
+                 'Dx' = B_cat$Dx) 
+df$Dx2 = ifelse(df$Dx =="Desmoid", 1, 0)
+Diag_DF <- data.frame(Attribute=c(colnames(df)[1:6]), AUC=NA)
+
+for(i in 1:nrow(Diag_DF)){
+  roc_result <- roc(df$Dx2, df[,as.character(Diag_DF$Attribute[i])])   #
+  Diag_DF[i,'AUC'] <- roc_result$auc  
+}
+
+Diag_DF <- Diag_DF[order(-Diag_DF$AUC),]   # AUC 값을 오름차순 정렬합니다.
+Diag_DF 
+```
+
+## ROC curve of TWIST2
+```{r message=FALSE}
+TWIST2_roc <- roc(df$Dx2, df$TWIST2)
+plot.roc(TWIST2_roc,   # roc를 계산한 value를 입력합니다.
+         col="red",   # 선의 색상을 설정합니다.
+         print.auc=TRUE,   # auc 값을 출력하도록 설정합니다.
+         max.auc.polygon=TRUE,   # auc의 최대 면적을 출력하도록 설정합니다.
+         print.thres=TRUE, print.thres.pch=19, print.thres.col = "red",   # 기준치(cut-off value)에 대한 출력, 포인트, 색상.
+         auc.polygon=TRUE, auc.polygon.col="#D1F2EB")   # 선 아래 면적에 대한 출력, 색상을 설정합니다. 
+```
+
+## ROC curve of Beta catenin
+```{r message=FALSE}
+B_cat_roc <- roc(df$Dx2, df$B_cat) 
+plot.roc(B_cat_roc,   # roc를 계산한 value를 입력합니다.
+         col="red",   # 선의 색상을 설정합니다.
+         print.auc=TRUE,   # auc 값을 출력하도록 설정합니다.
+         max.auc.polygon=TRUE,   # auc의 최대 면적을 출력하도록 설정합니다.
+         print.thres=TRUE, print.thres.pch=19, print.thres.col = "red",   
+         auc.polygon=TRUE, auc.polygon.col="#D1F2EB")   
+```
+
+## ROC curve of LRRC15
+```{r message=FALSE}
+LRRC15_roc <- roc(df$Dx2, df$LRRC15) 
+plot.roc(LRRC15_roc,   # roc를 계산한 value를 입력합니다.
+         col="red",   # 선의 색상을 설정합니다.
+         print.auc=TRUE,   # auc 값을 출력하도록 설정합니다.
+         max.auc.polygon=TRUE,   # auc의 최대 면적을 출력하도록 설정합니다.
+         print.thres=TRUE, print.thres.pch=19, print.thres.col = "red",   
+         auc.polygon=TRUE, auc.polygon.col="#D1F2EB")   
+```
+
+## ROC curve of SHOX2
+```{r message=FALSE}
+SHOX2_roc <- roc(df$Dx2, df$SHOX2) 
+plot.roc(SHOX2_roc,   # roc를 계산한 value를 입력합니다.
+         col="red",   # 선의 색상을 설정합니다.
+         print.auc=TRUE,   # auc 값을 출력하도록 설정합니다.
+         max.auc.polygon=TRUE,   # auc의 최대 면적을 출력하도록 설정합니다.
+         print.thres=TRUE, print.thres.pch=19, print.thres.col = "red",  
+         auc.polygon=TRUE, auc.polygon.col="#D1F2EB") 
+```
+
+## ROC curve of SALL4
+```{r message=FALSE}
+SALL4_roc <- roc(df$Dx2, df$SALL4) 
+plot.roc(SALL4_roc,   # roc를 계산한 value를 입력합니다.
+         col="red",   # 선의 색상을 설정합니다.
+         print.auc=TRUE,   # auc 값을 출력하도록 설정합니다.
+         max.auc.polygon=TRUE,   # auc의 최대 면적을 출력하도록 설정합니다.
+         print.thres=TRUE, print.thres.pch=19, print.thres.col = "red",   #
+         auc.polygon=TRUE, auc.polygon.col="#D1F2EB")  
+```
+
+## ROC curve of CTHRC1
+```{r message=FALSE}
+CTHRC1_roc <- roc(df$Dx2, df$CTHRC1) 
+plot.roc(CTHRC1_roc,   # roc를 계산한 value를 입력합니다.
+         col="red",   # 선의 색상을 설정합니다.
+         print.auc=TRUE,   # auc 값을 출력하도록 설정합니다.
+         max.auc.polygon=TRUE,   # auc의 최대 면적을 출력하도록 설정합니다.
+         print.thres=TRUE, print.thres.pch=19, print.thres.col = "red",   
+         auc.polygon=TRUE, auc.polygon.col="#D1F2EB")
+```
+
