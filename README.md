@@ -3,9 +3,9 @@ Professor at Samsung medical center, department of pathology
 college of medicine, Sungkyunkwan University
 
 # Desmoid_RNAseq
-Analysis of bulk RNAseq data of desmoid tumor and reactive fibrotic tissue
+Analysis of bulk RNAseq data of desmoid tumor(n=29) and reactive fibrotic tissue(n=14)
 
-## 37 Desmoid tissues and 14 reactive fibrotic tissue
+## 29 Desmoid tissues and 14 reactive fibrotic tissue
 ### Required file to run R codes of RNA-seq analysis
 [1] 01.batch_corrected_RNAseq_raw_data_and_metadata.Rda  // 01.DDx-Desmoid_vs_Scar.csv
 
